@@ -50,11 +50,9 @@ def _now() -> str:
 
 class Store:
     def __init__(self, db_path: Path = DB_PATH) -> None:
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.conn = sqlite3.connect(db_path)
+        self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(SCHEMA)
-        self.conn.commit()
 
     # ---------- 计算版本 ----------
     def new_run(self, date: str, params_snapshot: dict, m7_mode: str = "系统开机推演") -> str:
