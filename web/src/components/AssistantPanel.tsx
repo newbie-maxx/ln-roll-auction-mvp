@@ -32,6 +32,8 @@ export function AssistantPanel() {
       const r = await api.chat(text, selectedPeriod)
       if (r.ok && r.reply) {
         push({ role: 'assistant', text: r.reply })
+        // LLM 工具可能已改动工作台（修订/参数/意向）→ 刷新全量状态，左栏与输出即时更新
+        await initLive()
       } else {
         push({ role: 'assistant', text: `调用失败：${r.error ?? '未知错误'}` })
       }
