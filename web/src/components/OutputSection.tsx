@@ -50,7 +50,7 @@ function PriceChart() {
   return (
     <section className="rounded-lg border border-[#334155] bg-[#0E1223]">
       <div className="flex flex-wrap items-center gap-2 border-b border-[#334155] px-3 py-2">
-        <span className="text-xs font-semibold text-[#94A3B8]">预测电价（M8 输出）</span>
+        <span className="text-xs font-semibold text-[#94A3B8]">预测电价（电价预测 · 只读输出）</span>
         <OutputBadge label="输出·只读" />
         <div className="ml-auto flex gap-1">
           {(['final', 'pred1', 'pred2'] as const).map((v) => (

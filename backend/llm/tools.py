@@ -156,6 +156,12 @@ def _num(v: float | None, nd: int = 2) -> float | None:
     return round(v, nd) if v is not None else None
 
 
+def _sync_api_result(r) -> None:
+    """工具驱动的重算同步到 api 层 RESULT 缓存（否则 /api/state 读到陈旧结果）。"""
+    from .. import api as _api
+    _api.RESULT = r
+
+
 def build_registry(pipe: Pipeline, get_result: Callable[[], Any]) -> dict[str, Callable[[dict], dict]]:
     """构造 工具名 → 执行函数 的注册表（pipe/get_result 由 api 注入）。"""
 
@@ -168,6 +174,7 @@ def build_registry(pipe: Pipeline, get_result: Callable[[], Any]) -> dict[str, C
 
     def run_chain(args: dict) -> dict:                      # noqa: ARG001
         r = pipe.run_all()
+        _sync_api_result(r)
         return {"ok": True, "timings_ms": r.timings_ms,
                 "price_24_head": [_num(v) for v in r.m8["final_24"][:6]]}
 
@@ -180,6 +187,7 @@ def build_registry(pipe: Pipeline, get_result: Callable[[], Any]) -> dict[str, C
         except ValueError as e:
             return {"ok": False, "error": str(e)}
         r = pipe.recalc_point()
+        _sync_api_result(r)
         return {"ok": True, "params": pipe.params.as_dict(),
                 "price_24": [_num(v) for v in r.m8["final_24"]],
                 "timings_ms": r.timings_ms}
@@ -194,6 +202,7 @@ def build_registry(pipe: Pipeline, get_result: Callable[[], Any]) -> dict[str, C
         except ValueError as e:
             return {"ok": False, "error": str(e)}
         r = pipe.recalc_point()
+        _sync_api_result(r)
         p = int(args["period"])
         return {"ok": True, "rev_ids": rev_ids,
                 "price_24_period": _num(r.m8["final_24"][p - 1]),
@@ -207,6 +216,7 @@ def build_registry(pipe: Pipeline, get_result: Callable[[], Any]) -> dict[str, C
         except ValueError as e:
             return {"ok": False, "error": str(e)}
         r = pipe.recalc_point()
+        _sync_api_result(r)
         return {"ok": True, "grey": r.grey[int(args["period"]) - 1]}
 
     def get_module(args: dict) -> dict:
@@ -281,6 +291,7 @@ def build_registry(pipe: Pipeline, get_result: Callable[[], Any]) -> dict[str, C
         except ValueError as e:
             return {"ok": False, "error": str(e)}
         r = pipe.recalc_point()
+        _sync_api_result(r)
         return {"ok": True, "revisions": pipe.store.all_revisions(),
                 "price_24": [_num(v) for v in r.m8["final_24"]]}
 

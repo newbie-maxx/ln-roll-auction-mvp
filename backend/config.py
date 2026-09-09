@@ -21,6 +21,21 @@ EXPORT_DIR = BACKEND_DIR / "data" / "exports"
 ROLL_AUCTION_XLSX = Path(os.environ.get("WB_ROLL_AUCTION", DATA_DIR / "省间滚撮.xlsx"))
 
 # 日期角色（已确认）：D=08-31（预测对象）、A=08-30（最新日前出清价日）、A-1=08-29（回溯 08-28…）
+def _load_env_file() -> None:
+    """启动时加载仓库根 .env（仅设缺失键，不覆盖已有环境变量；key 不打日志）。"""
+    env_path = REPO_ROOT / ".env"
+    if not env_path.exists():
+        return
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        os.environ.setdefault(key.strip(), value.strip())
+
+
+_load_env_file()
+
 D_DAY = os.environ.get("WB_D_DAY", "2026-08-31")
 A_DAY = os.environ.get("WB_A_DAY", "2026-08-30")
 

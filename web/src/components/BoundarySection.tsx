@@ -24,8 +24,10 @@ function effectiveSeries(key: BoundaryKey, base: Series96, revisions: { boundary
   return s
 }
 
-/** 单个数值格编辑弹层（理由 ≥5 字强制） */
-function CellEditor({ boundary, t, current, onClose }: { boundary: BoundaryKey; t: number; current: number | null; onClose: () => void }) {
+/** 单个数值格编辑弹层（fixed 定位、视口内钳制；理由 ≥5 字强制） */
+function CellEditor({ boundary, t, current, anchor, onClose }: { boundary: BoundaryKey; t: number; current: number | null; anchor: { left: number; top: number }; onClose: () => void }) {
+  const left = Math.min(Math.max(anchor.left, 8), window.innerWidth - 248)   // 与格子左缘对齐：必在中栏内，不遮左栏
+  const top = anchor.top + 190 > window.innerHeight ? Math.max(anchor.top - 196, 8) : anchor.top + 8
   const modifyBoundary = useWorkbench((s) => s.modifyBoundary)
   const [value, setValue] = useState(current === null ? '' : String(current))
   const [reason, setReason] = useState('')
@@ -40,7 +42,7 @@ function CellEditor({ boundary, t, current, onClose }: { boundary: BoundaryKey; 
   }
 
   return (
-    <div className="absolute right-0 top-7 z-30 w-56 rounded-md border border-[#334155] bg-[#0E1223] p-3 shadow-lg">
+    <div className="fixed z-50 w-56 rounded-md border border-[#334155] bg-[#0E1223] p-3 shadow-lg" style={{ left, top }}>
       <div className="mb-2 text-xs text-[#94A3B8]">修改 {boundary} · t={t}（{TIME_LABELS_96[t - 1]}）</div>
       <input
         aria-label="新值（MW）"
@@ -67,6 +69,7 @@ function CellEditor({ boundary, t, current, onClose }: { boundary: BoundaryKey; 
 export function BoundarySection() {
   const [tab, setTab] = useState<string>('负荷')
   const [editing, setEditing] = useState<number | null>(null)
+  const [editAnchor, setEditAnchor] = useState<{ left: number; top: number } | null>(null)
   const revisions = useWorkbench((s) => s.revisions)
   const derived = useWorkbench((s) => s.derived)
   const selectedPeriod = useWorkbench((s) => s.selectedPeriod)
@@ -140,7 +143,13 @@ export function BoundarySection() {
             return (
               <div key={t} className="relative">
                 <button
-                  onClick={() => isBoundary && setEditing(editing === t ? null : t)}
+                  onClick={(e) => {
+              if (!isBoundary) return
+              if (editing === t) { setEditing(null); return }
+              const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+              setEditAnchor({ left: r.left, top: r.bottom })
+              setEditing(t)
+            }}
                   className={`mono w-full cursor-pointer px-1 py-1 text-left text-[10px] transition-colors duration-150 ${
                     rev
                       ? 'bg-[#22C55E]/15 text-[#22C55E]'
@@ -152,8 +161,8 @@ export function BoundarySection() {
                 >
                   {v === null ? '缺' : v >= 10000 ? (v / 1000).toFixed(1) + 'k' : v.toFixed(0)}
                 </button>
-                {editing === t && isBoundary && (
-                  <CellEditor boundary={tab as BoundaryKey} t={t} current={v} onClose={() => setEditing(null)} />
+                {editing === t && isBoundary && editAnchor && (
+                  <CellEditor boundary={tab as BoundaryKey} t={t} current={v} anchor={editAnchor} onClose={() => setEditing(null)} />
                 )}
               </div>
             )

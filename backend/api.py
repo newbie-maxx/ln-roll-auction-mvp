@@ -199,13 +199,15 @@ def chat(body: ChatBody) -> dict:
     from .llm.client import chat_with_tools
     cfg = env_llm()
     if not cfg["api_key"]:
-        return {"ok": False,
-                "error": "未配置 LLM API key：请在设置面板填写 LLM_BASE_URL / LLM_API_KEY / LLM_MODEL（或写入 .env）后重试",
-                "reply": None}
+        err = "未配置 LLM API key：请在设置面板填写 LLM_BASE_URL / LLM_API_KEY / LLM_MODEL（或写入 .env）后重试"
+        PIPE.store.log_chat(body.message, [], f"[未配置 key] {err}", period=body.period)
+        return {"ok": False, "error": err, "reply": None}
     try:
         reply, tool_calls = chat_with_tools(body.message, period=body.period)
     except Exception as e:  # noqa: BLE001
+        PIPE.store.log_chat(body.message, [], f"[调用失败] {e}", period=body.period)
         return {"ok": False, "error": f"LLM 调用失败：{e}", "reply": None}
+    PIPE.store.log_chat(body.message, tool_calls, reply, run_id=PIPE._pristine_run_id, period=body.period)
     return {"ok": True, "reply": reply, "tool_calls": tool_calls}
 
 

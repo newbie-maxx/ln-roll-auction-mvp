@@ -8,7 +8,9 @@ import { BOUNDARY_KEYS, type BoundaryKey } from '../calc/types'
 
 const fmt = (v: number | null | undefined, d = 1) => (v === null || v === undefined ? '—' : v.toFixed(d))
 
-function SlideCellEditor({ boundary, t, current, onClose }: { boundary: BoundaryKey; t: number; current: number | null; onClose: () => void }) {
+function SlideCellEditor({ boundary, t, current, anchor, onClose }: { boundary: BoundaryKey; t: number; current: number | null; anchor: { left: number; top: number }; onClose: () => void }) {
+  const left = Math.min(Math.max(anchor.left, 8), window.innerWidth - 248)   // 与格子左缘对齐：必在中栏内，不遮左栏
+  const top = anchor.top + 190 > window.innerHeight ? Math.max(anchor.top - 196, 8) : anchor.top + 8
   const modifyBoundary = useWorkbench((s) => s.modifyBoundary)
   const [value, setValue] = useState(current === null ? '' : String(current))
   const [reason, setReason] = useState('')
@@ -22,7 +24,7 @@ function SlideCellEditor({ boundary, t, current, onClose }: { boundary: Boundary
     onClose()
   }
   return (
-    <div className="absolute left-1/2 top-8 z-30 w-56 -translate-x-1/2 rounded-md border border-[#334155] bg-[#0E1223] p-3 shadow-lg">
+    <div className="fixed z-50 w-56 rounded-md border border-[#334155] bg-[#0E1223] p-3 shadow-lg" style={{ left, top }}>
       <div className="mb-2 text-xs text-[#94A3B8]">修改 {boundary} · t={t}（{TIME_LABELS_96[t - 1]}）</div>
       <input className="mono mb-2 w-full rounded border border-[#334155] bg-[#020617] px-2 py-1 text-sm text-[#F8FAFC] outline-none focus:border-[#3B82F6]" value={value} onChange={(e) => setValue(e.target.value)} placeholder="新值（MW）" autoFocus />
       <input className="mb-2 w-full rounded border border-[#334155] bg-[#020617] px-2 py-1 text-xs text-[#F8FAFC] outline-none focus:border-[#3B82F6]" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="修改理由（≥5 字，必填）" />
@@ -42,6 +44,7 @@ export function PeriodSlidePanel({ period, onClose }: { period: number; onClose:
   const setIntent = useWorkbench((s) => s.setIntent)
   const [boundary, setBoundary] = useState<BoundaryKey>('负荷')
   const [editing, setEditing] = useState<number | null>(null)
+  const [editAnchor, setEditAnchor] = useState<{ left: number; top: number } | null>(null)
   const intent = intents[period]
 
   const hourIdx = Array.from({ length: 4 }, (_, j) => (period - 1) * 4 + j)   // 0-based
@@ -104,7 +107,13 @@ export function PeriodSlidePanel({ period, onClose }: { period: number; onClose:
               return (
                 <div key={t} className="relative">
                   <button
-                    onClick={() => inHour && setEditing(editing ? null : t)}
+                    onClick={(e) => {
+                      if (!inHour) return
+                      if (editing === t) { setEditing(null); return }
+                      const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                      setEditAnchor({ left: r.left, top: r.bottom })
+                      setEditing(t)
+                    }}
                     disabled={!inHour}
                     className={`mono w-full px-1 py-1 text-left text-[10px] ${
                       editable ? 'bg-[#EF4444]/25 text-[#F8FAFC] ring-1 ring-[#EF4444]'
@@ -116,7 +125,7 @@ export function PeriodSlidePanel({ period, onClose }: { period: number; onClose:
                   >
                     {v === null ? '缺' : v >= 10000 ? (v / 1000).toFixed(1) + 'k' : v.toFixed(0)}
                   </button>
-                  {editable && <SlideCellEditor boundary={boundary} t={t} current={v} onClose={() => setEditing(null)} />}
+                  {editable && editAnchor && <SlideCellEditor boundary={boundary} t={t} current={v} anchor={editAnchor} onClose={() => setEditing(null)} />}
                 </div>
               )
             })}

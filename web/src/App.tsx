@@ -10,7 +10,7 @@ import { PeriodSlidePanel } from './components/PeriodSlidePanel'
 import { D_DAY, A_DAY, useWorkbench } from './store'
 import { api, ApiError } from './api/client'
 
-const STEPS = ['M1 装载', 'M2 分布式', 'M3 相似日', 'M4 基线', 'M5 省间', 'M6 预测联络线', 'M7 开机/负荷率', 'M8 电价']
+const STEPS = ['边界数据装载', '分布式新能源推断', '相似日检索', '联络线基线', '省间交易总数', '预测联络线', '开机推演与负荷率', '电价预测与落点']
 
 export default function App() {
   const selectedPeriod = useWorkbench((s) => s.selectedPeriod)
@@ -42,7 +42,7 @@ export default function App() {
         </div>
         <nav className="ml-2 hidden flex-1 items-center gap-0.5 xl:flex">
           {STEPS.map((s, i) => (
-            <span key={s} className="flex items-center">
+            <span key={s} className="flex items-center" title={`M${i + 1}（PRD §6 模块编号）`}>
               <span className="rounded bg-[#1A1E2F] px-1.5 py-0.5 text-[10px] text-[#94A3B8]">{s}</span>
               {i < STEPS.length - 1 && <span className="text-[#334155]">→</span>}
             </span>
@@ -85,7 +85,7 @@ export default function App() {
       {apiBusy && (
         <div className="flex items-center gap-2 border-b border-[#3B82F6]/40 bg-[#3B82F6]/10 px-4 py-1 text-[11px] text-[#3B82F6]">
           <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-[#3B82F6] border-t-transparent" aria-hidden="true" />
-          正在联动重算（后端 M1→M8）…
+          正在联动重算（边界→联络线→开机→电价全链）…
         </div>
       )}
       {exportNote && (
@@ -99,7 +99,7 @@ export default function App() {
         <aside className="w-[280px] shrink-0 border-r border-[#334155]">
           <PeriodNav />
         </aside>
-        <main className="relative min-w-0 flex-1 overflow-y-auto p-3">
+        <main className={`relative min-w-0 flex-1 p-3 ${paramsOpen || selectedPeriod !== null ? 'overflow-hidden' : 'overflow-y-auto'}`}>
           <div className="space-y-3">
             <BoundarySection />
             <OutputSection />
