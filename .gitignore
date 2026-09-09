@@ -7,3 +7,4 @@ web/coverage/
 backend/data/
 *.db
 __pycache__/
+.venv/
