@@ -22,6 +22,7 @@ const NUM_FIELDS: { key: keyof Params | '开机常量'; label: string; step?: st
 
 export function GlobalParamsDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const params = useWorkbench((s) => s.params)
+  const apiBusy = useWorkbench((s) => s.apiBusy)
   const unitOn = useWorkbench((s) => s.unitOn)
   const paramLog = useWorkbench((s) => s.paramLog)
   const setParams = useWorkbench((s) => s.setParams)
@@ -77,27 +78,31 @@ export function GlobalParamsDrawer({ open, onClose }: { open: boolean; onClose: 
                 step={f.step}
                 onChange={(e) => setDraft((prev) => ({ ...prev, [f.key]: e.target.value }))}
               />
-              {f.hint && <span className="mt-0.5 block text-[9px] text-[#94A3B8]/70">{f.hint}</span>}
+              {f.hint && <span className="mt-0.5 block text-[10px] text-[#94A3B8]">{f.hint}</span>}
             </label>
           ))}
         </div>
 
         <div className="mt-3">
-          <span className="mb-0.5 block text-[10px] text-[#94A3B8]">修改理由（≥5 字，必填）</span>
+          <label htmlFor="param-reason" className="mb-0.5 block text-[10px] text-[#94A3B8]">修改理由（≥5 字，必填）</label>
           <input
-            className="w-full rounded border border-[#334155] bg-[#020617] px-2 py-1.5 text-xs text-[#F8FAFC] outline-none focus:border-[#3B82F6]"
+            id="param-reason"
+            aria-describedby={error ? 'param-error' : undefined}
+            aria-invalid={error ? true : undefined}
+            className={`w-full rounded border px-2 py-1.5 text-xs text-[#F8FAFC] outline-none focus:border-[#3B82F6] ${error ? 'border-[#EF4444]' : 'border-[#334155]'} bg-[#020617]`}
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             placeholder="例如：现货上限政策调整，钳制与落点档联动"
           />
         </div>
-        {error && <div className="mt-2 rounded border border-[#EF4444]/50 bg-[#EF4444]/10 p-2 text-xs text-[#EF4444]">{error}</div>}
+        {error && <div id="param-error" role="alert" className="mt-2 rounded border border-[#EF4444]/50 bg-[#EF4444]/10 p-2 text-xs text-[#EF4444]">{error}</div>}
         {saved && <div className="mt-2 text-xs text-[#22C55E]">已于 {saved} 保存并重算</div>}
         <button
           onClick={save}
-          className="mt-3 cursor-pointer rounded bg-[#22C55E] px-4 py-1.5 text-xs font-semibold text-[#0F172A] transition-opacity hover:opacity-90"
+          disabled={apiBusy}
+          className="mt-3 inline-flex cursor-pointer items-center gap-2 rounded bg-[#22C55E] px-4 py-1.5 text-xs font-semibold text-[#0F172A] transition-opacity hover:opacity-90 disabled:opacity-45"
         >
-          保存并重算
+          {apiBusy ? '保存中…' : '保存并重算'}
         </button>
 
         <div className="mt-5">

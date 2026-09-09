@@ -1,7 +1,7 @@
 /** 工作台状态（zustand）：
  *  - demo 模式：web/src/calc 本地计算（UI 标注 demo）。
  *  - live 模式（Step 8）：数据/计算来自后端 API（web/src/api/client.ts），改动经 API 落 SQLite 留痕；
- *    后端不可达时自动降级 demo（顶部横幅区分）。 */
+ *    后端不可达时自动降级 demo（顶部横幅区分）。live 异步调用统一 busy 指示 + 错误上浮（lastError）。 */
 import { create } from 'zustand'
 import mockJson from './mock/boundaries.json'
 import { DEFAULT_PARAMS, validateParams, type Params } from './calc/params'
@@ -61,6 +61,8 @@ export interface WorkbenchState {
   derived: DerivedOutputs
   outputsFreshAt: string
   chatBusy: boolean
+  lastError: string | null
+  apiBusy: boolean
   llmInfo: { configured: boolean; model: string; baseUrl: string; maskedKey: string }
   // actions
   initLive: () => Promise<boolean>
@@ -69,6 +71,7 @@ export interface WorkbenchState {
   modifyBoundary: (boundary: BoundaryKey, period: number, points: { t: number; value: number }[], reason: string) => string | null
   setIntent: (period: number, patch: Partial<IntentEntry>) => void
   rollback: (revId: string) => void
+  clearError: () => void
 }
 
 const DATA = mockJson as unknown as MockPayload
@@ -198,7 +201,6 @@ function mapBackend(st: BackendState): { derived: DerivedOutputs; params: Params
   return { derived, params, revisions, intents }
 }
 
-
 /** 原始（未修订）边界序列缓存（live 模式），供修订曲线并存 */
 let liveBoundaries: Record<string, Series96> | null = null
 
@@ -206,156 +208,161 @@ export function cacheLiveBoundaries(b: Record<string, Series96>) {
   liveBoundaries = b
 }
 
-/** 后端拉取后统一刷新 live 状态（含边界原值缓存；extra 附加补丁如参数留痕） */
-async function refreshLive(extra?: Partial<WorkbenchState>): Promise<void> {
-  const st = await api.state()
-  const { derived, params, revisions, intents } = mapBackend(st)
-  const bounds: Record<string, Series96> = {}
-  for (const [k, v] of Object.entries(st.boundaries ?? {})) bounds[k] = v.values
-  cacheLiveBoundaries(bounds)
-  const patch: Record<string, unknown> = {
-    derived, params, revisions, unitOn: derived.unitOn,
-    outputsFreshAt: new Date().toISOString(),
-  }
-  if (Object.keys(intents).length > 0) patch['intents'] = intents
-  useWorkbench.setState(patch as Partial<WorkbenchState>)
-  if (extra) useWorkbench.setState(extra)
-}
-
-export const useWorkbench = create<WorkbenchState>((set, get) => ({
-  mode: 'demo',
-  data: DATA,
-  params: { ...DEFAULT_PARAMS },
-  unitOn: initialUnitOn,
-  selectedPeriod: null,
-  revisions: [],
-  intents: defaultIntents,
-  paramLog: [],
-  derived: recalcDerived({ ...DEFAULT_PARAMS }, initialUnitOn, [], defaultIntents),
-  outputsFreshAt: new Date().toISOString(),
-  chatBusy: false,
-  llmInfo: { configured: false, model: '', baseUrl: '', maskedKey: '' },
-
-  initLive: async () => {
+export const useWorkbench = create<WorkbenchState>((set, get) => {
+  /** live 异步调用包装：busy 指示 + 错误上浮（不再只进 console）+ 成功后统一刷新 */
+  const liveCall = async (fn: () => Promise<unknown>, what: string, after?: () => void): Promise<void> => {
+    set({ apiBusy: true, lastError: null })
     try {
+      await fn()
       const st = await api.state()
       const { derived, params, revisions, intents } = mapBackend(st)
       const bounds: Record<string, Series96> = {}
       for (const [k, v] of Object.entries(st.boundaries ?? {})) bounds[k] = v.values
       cacheLiveBoundaries(bounds)
-      let llmInfo = get().llmInfo
-      try {
-        const cfg = await api.llmConfig()
-        llmInfo = { configured: cfg.configured, model: cfg.model, baseUrl: cfg.base_url, maskedKey: cfg.api_key_masked }
-      } catch { /* 配置接口失败不阻塞 live */ }
-      set({
-        mode: 'live', derived, params, revisions,
-        intents: Object.keys(intents).length ? intents : get().intents,
-        unitOn: derived.unitOn,
+      const patch: Partial<WorkbenchState> = {
+        derived, params, revisions, unitOn: derived.unitOn,
         outputsFreshAt: new Date().toISOString(),
-        llmInfo,
-      })
-      return true
-    } catch {
-      set({ mode: 'demo' })
-      return false
-    }
-  },
-
-  selectPeriod: (p) => set({ selectedPeriod: p }),
-
-  setParams: (patch, reason) => {
-    const { 开机常量, ...paramPatch } = patch
-    if (get().mode === 'live') {
-      // live 模式开机由 M7 11 步推演产出（开机常量为 demo 简化参数，忽略）
-      const payload: Record<string, number> = {}
-      api.setParams(payload, reason)
-        .then(() => refreshLive({
-          paramLog: [...get().paramLog, {
-            time: new Date().toLocaleString('zh-CN'),
-            changes: Object.entries(payload).map(([k, v]) => `${k}=${v}`).join('，'),
-            reason,
-          }],
-        }))
-      return null
-    }
-    const next = { ...get().params, ...paramPatch }
-    const errs = validateParams(next)
-    if (errs.length > 0) return errs.join('；')
-    if (开机常量 !== undefined && (!Number.isFinite(开机常量) || 开机常量 <= 0)) return '开机常量须为 >0 数值'
-    if (reason.trim().length < 5) return '修改理由须 ≥5 字'
-    const unitOn = 开机常量 ?? get().unitOn
-    const derived = recalcDerived(next, unitOn, get().revisions, get().intents)
-    const changes = Object.entries({ ...paramPatch, ...(开机常量 !== undefined ? { 开机常量 } : {}) })
-      .map(([k, v]) => `${k}=${v}`).join('，')
-    set({
-      params: next, unitOn, derived,
-      outputsFreshAt: new Date().toISOString(),
-      paramLog: [...get().paramLog, { time: new Date().toLocaleString('zh-CN'), changes, reason }],
-    })
-    return null
-  },
-
-  modifyBoundary: (boundary, period, points, reason) => {
-    if (get().mode === 'live') {
-      api.modifyBoundary(boundary, period, points, reason)
-        .then(() => refreshLive())
-        .catch((e: Error) => console.error('modifyBoundary failed:', e.message))
-      return null
-    }
-    if (reason.trim().length < 5) return '修改理由须 ≥5 字'
-    if (!BOUNDARY_KEYS.includes(boundary)) return `非法边界 ${boundary}`
-    const base = boundarySeries(D_DAY, boundary)
-    const now = new Date()
-    const newRevs: Revision[] = points.map((pt, i) => {
-      if (pt.t < 1 || pt.t > 96 || !Number.isFinite(pt.value)) throw new Error(`非法点位 t=${pt.t}`)
-      return {
-        id: `R${now.getTime().toString(36)}-${period}-${boundary}-${pt.t}-${i}`,
-        boundary, period, t: pt.t,
-        oldValue: base[pt.t - 1] ?? null,
-        newValue: pt.value,
-        reason, opTime: now.toISOString(),
+        apiBusy: false,
       }
-    })
-    const revisions = [...get().revisions, ...newRevs]
-    const derived = recalcDerived(get().params, get().unitOn, revisions, get().intents)
-    set({ revisions, derived, outputsFreshAt: new Date().toISOString() })
-    return null
-  },
+      if (Object.keys(intents).length > 0) patch.intents = intents
+      set(patch)
+      after?.()
+    } catch (e) {
+      set({ apiBusy: false, lastError: `${what}失败：${e instanceof Error ? e.message : String(e)}` })
+    }
+  }
 
-  setIntent: (period, patch) => {
-    if (get().mode === 'live') {
-      api.setIntent(period, {
-        list_price: patch.listPrice ?? undefined,
-        lift_price: patch.liftPrice ?? undefined,
-        volume: patch.volume ?? undefined,
+  return {
+    mode: 'demo',
+    data: DATA,
+    params: { ...DEFAULT_PARAMS },
+    unitOn: initialUnitOn,
+    selectedPeriod: null,
+    revisions: [],
+    intents: defaultIntents,
+    paramLog: [],
+    derived: recalcDerived({ ...DEFAULT_PARAMS }, initialUnitOn, [], defaultIntents),
+    outputsFreshAt: new Date().toISOString(),
+    chatBusy: false,
+    lastError: null,
+    apiBusy: false,
+    llmInfo: { configured: false, model: '', baseUrl: '', maskedKey: '' },
+
+    initLive: async () => {
+      try {
+        const st = await api.state()
+        const { derived, params, revisions, intents } = mapBackend(st)
+        const bounds: Record<string, Series96> = {}
+        for (const [k, v] of Object.entries(st.boundaries ?? {})) bounds[k] = v.values
+        cacheLiveBoundaries(bounds)
+        let llmInfo = get().llmInfo
+        try {
+          const cfg = await api.llmConfig()
+          llmInfo = { configured: cfg.configured, model: cfg.model, baseUrl: cfg.base_url, maskedKey: cfg.api_key_masked }
+        } catch { /* 配置接口失败不阻塞 live */ }
+        set({
+          mode: 'live', derived, params, revisions,
+          intents: Object.keys(intents).length ? intents : get().intents,
+          unitOn: derived.unitOn,
+          outputsFreshAt: new Date().toISOString(),
+          llmInfo,
+        })
+        return true
+      } catch {
+        set({ mode: 'demo' })
+        return false
+      }
+    },
+
+    selectPeriod: (p) => set({ selectedPeriod: p }),
+
+    clearError: () => set({ lastError: null }),
+
+    setParams: (patch, reason) => {
+      const { 开机常量, ...paramPatch } = patch
+      if (get().mode === 'live') {
+        // live 模式开机由 M7 11 步推演产出（开机常量为 demo 简化参数，忽略）
+        const payload: Record<string, number> = {}
+        for (const [k, v] of Object.entries(paramPatch)) if (typeof v === 'number') payload[k] = v
+        void liveCall(
+          () => api.setParams(payload, reason),
+          '参数保存',
+          () => set({ paramLog: [...get().paramLog, { time: new Date().toLocaleString('zh-CN'), changes: Object.entries(payload).map(([k, v]) => `${k}=${v}`).join('，'), reason }] }),
+        )
+        return null
+      }
+      const next = { ...get().params, ...paramPatch }
+      const errs = validateParams(next)
+      if (errs.length > 0) return errs.join('；')
+      if (开机常量 !== undefined && (!Number.isFinite(开机常量) || 开机常量 <= 0)) return '开机常量须为 >0 数值'
+      if (reason.trim().length < 5) return '修改理由须 ≥5 字'
+      const unitOn = 开机常量 ?? get().unitOn
+      const derived = recalcDerived(next, unitOn, get().revisions, get().intents)
+      const changes = Object.entries({ ...paramPatch, ...(开机常量 !== undefined ? { 开机常量 } : {}) })
+        .map(([k, v]) => `${k}=${v}`).join('，')
+      set({
+        params: next, unitOn, derived,
+        outputsFreshAt: new Date().toISOString(),
+        paramLog: [...get().paramLog, { time: new Date().toLocaleString('zh-CN'), changes, reason }],
       })
-        .then(() => refreshLive())
-        .catch((e: Error) => console.error('setIntent failed:', e.message))
-      return
-    }
-    const cur = get().intents[period] ?? { ...DATA.intentDefault }
-    const next = { ...cur, ...patch }
-    if (next.listPrice !== null && next.listPrice <= 0) return
-    if (next.liftPrice !== null && next.liftPrice <= 0) return
-    if (next.volume !== null && next.volume <= 0) return
-    const intents = { ...get().intents, [period]: next }
-    const derived = recalcDerived(get().params, get().unitOn, get().revisions, intents)
-    set({ intents, derived, outputsFreshAt: new Date().toISOString() })
-  },
+      return null
+    },
 
-  rollback: (revId) => {
-    if (get().mode === 'live') {
-      api.rollback(revId)
-        .then(() => refreshLive())
-        .catch((e: Error) => console.error('rollback failed:', e.message))
-      return
-    }
-    const revisions = get().revisions.map((r) => (r.id === revId ? { ...r, rolledBack: true } : r))
-    const derived = recalcDerived(get().params, get().unitOn, revisions, get().intents)
-    set({ revisions, derived, outputsFreshAt: new Date().toISOString() })
-  },
-}))
+    modifyBoundary: (boundary, period, points, reason) => {
+      if (get().mode === 'live') {
+        void liveCall(() => api.modifyBoundary(boundary, period, points, reason), '边界修订')
+        return null
+      }
+      if (reason.trim().length < 5) return '修改理由须 ≥5 字'
+      if (!BOUNDARY_KEYS.includes(boundary)) return `非法边界 ${boundary}`
+      const base = boundarySeries(D_DAY, boundary)
+      const now = new Date()
+      const newRevs: Revision[] = points.map((pt, i) => {
+        if (pt.t < 1 || pt.t > 96 || !Number.isFinite(pt.value)) throw new Error(`非法点位 t=${pt.t}`)
+        return {
+          id: `R${now.getTime().toString(36)}-${period}-${boundary}-${pt.t}-${i}`,
+          boundary, period, t: pt.t,
+          oldValue: base[pt.t - 1] ?? null,
+          newValue: pt.value,
+          reason, opTime: now.toISOString(),
+        }
+      })
+      const revisions = [...get().revisions, ...newRevs]
+      const derived = recalcDerived(get().params, get().unitOn, revisions, get().intents)
+      set({ revisions, derived, outputsFreshAt: new Date().toISOString() })
+      return null
+    },
+
+    setIntent: (period, patch) => {
+      if (get().mode === 'live') {
+        void liveCall(() => api.setIntent(period, {
+          list_price: patch.listPrice ?? undefined,
+          lift_price: patch.liftPrice ?? undefined,
+          volume: patch.volume ?? undefined,
+        }), '意向录入')
+        return
+      }
+      const cur = get().intents[period] ?? { ...DATA.intentDefault }
+      const next = { ...cur, ...patch }
+      if (next.listPrice !== null && next.listPrice <= 0) return
+      if (next.liftPrice !== null && next.liftPrice <= 0) return
+      if (next.volume !== null && next.volume <= 0) return
+      const intents = { ...get().intents, [period]: next }
+      const derived = recalcDerived(get().params, get().unitOn, get().revisions, intents)
+      set({ intents, derived, outputsFreshAt: new Date().toISOString() })
+    },
+
+    rollback: (revId) => {
+      if (get().mode === 'live') {
+        void liveCall(() => api.rollback(revId), '回退')
+        return
+      }
+      const revisions = get().revisions.map((r) => (r.id === revId ? { ...r, rolledBack: true } : r))
+      const derived = recalcDerived(get().params, get().unitOn, revisions, get().intents)
+      set({ revisions, derived, outputsFreshAt: new Date().toISOString() })
+    },
+  }
+})
 
 export function originalBoundary(key: BoundaryKey): Series96 {
   if (liveBoundaries && liveBoundaries[key]) return liveBoundaries[key]

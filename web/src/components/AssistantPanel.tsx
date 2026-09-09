@@ -125,10 +125,10 @@ export function AssistantPanel() {
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2 border-b border-[#334155] px-3 py-2 text-xs">
         <span className="font-semibold text-[#94A3B8]">智能助手</span>
-        <span className={`rounded px-1.5 py-0.5 text-[9px] font-semibold ${mode === 'live' ? (llmInfo.configured ? 'bg-[#22C55E]/20 text-[#22C55E]' : 'bg-[#EF4444]/20 text-[#EF4444]') : 'bg-[#1A1E2F] text-[#F59E0B]'}`}>
+        <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${mode === 'live' ? (llmInfo.configured ? 'bg-[#22C55E]/20 text-[#22C55E]' : 'bg-[#EF4444]/20 text-[#EF4444]') : 'bg-[#1A1E2F] text-[#F59E0B]'}`}>
           {mode === 'live' ? (llmInfo.configured ? `真实 LLM · ${llmInfo.model}` : '未配置 key') : '演示桩·未接模型'}
         </span>
-        <button onClick={() => setSettingsOpen(!settingsOpen)} className="ml-auto cursor-pointer rounded border border-[#334155] px-1.5 py-0.5 text-[9px] text-[#94A3B8] hover:text-[#F8FAFC]">
+        <button onClick={() => setSettingsOpen(!settingsOpen)} className="ml-auto cursor-pointer rounded border border-[#334155] px-1.5 py-0.5 text-[10px] text-[#94A3B8] hover:text-[#F8FAFC]">
           LLM 设置
         </button>
         <span className="rounded bg-[#1A1E2F] px-1.5 py-0.5 text-[10px] text-[#94A3B8]">时段 {selectedPeriod ?? '—'}</span>
@@ -180,7 +180,7 @@ export function AssistantPanel() {
             发送
           </button>
         </div>
-        <div className="text-[9px] text-[#94A3B8]">护栏 G4：只评审不代拟、不产可申报数值｜每轮快照留痕于 chat_log</div>
+        <div className="text-[10px] text-[#94A3B8]">护栏 G4：只评审不代拟、不产可申报数值｜每轮快照留痕于 chat_log</div>
       </div>
     </div>
   )

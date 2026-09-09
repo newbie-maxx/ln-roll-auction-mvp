@@ -10,7 +10,7 @@ type PriceView = 'final' | 'pred1' | 'pred2'
 const fmt = (v: number | null | undefined, d = 1) => (v === null || v === undefined ? '—' : v.toFixed(d))
 
 function OutputBadge({ label }: { label: string }) {
-  return <span className="rounded bg-[#A855F7]/20 px-1.5 py-0.5 text-[9px] font-semibold text-[#A855F7]">{label}</span>
+  return <span className="rounded bg-[#A855F7]/20 px-1.5 py-0.5 text-[10px] font-semibold text-[#A855F7]">{label}</span>
 }
 
 function PriceChart() {
@@ -37,14 +37,15 @@ function PriceChart() {
     height: 200,
     series: [{
       name: `预测电价·${view === 'final' ? '最终' : view === 'pred1' ? '预测1' : '预测2'}（${gran} 点）`,
-      type: 'line' as const,
-      showSymbol: false,
       data,
-      lineStyle: { color: '#A855F7', width: 1.5 },
-      itemStyle: { color: '#A855F7' },
-      areaStyle: view === 'final' ? { color: 'rgba(168,85,247,0.08)' } : undefined,
+      color: '#A855F7',
+      area: view === 'final',
     }],
-  }), [data, gran, markIdx, view, labels])
+    thresholds: [
+      { yAxis: params.现货下限, name: '下限', color: '#EF4444' },
+      { yAxis: params.现货上限, name: '上限', color: '#22C55E' },
+    ],
+  }), [data, gran, markIdx, view, labels, params.现货下限, params.现货上限])
 
   return (
     <section className="rounded-lg border border-[#334155] bg-[#0E1223]">
@@ -106,40 +107,29 @@ function LoadRateSection() {
   const derived = useWorkbench((s) => s.derived)
   const selectedPeriod = useWorkbench((s) => s.selectedPeriod)
 
+  const zeroLR = useWorkbench((s) => s.params.零价点负荷率)
   const spec96 = {
     labels: TIME_LABELS_96,
     markAreaIndex: selectedPeriod ? ([(selectedPeriod - 1) * 4, selectedPeriod * 4 - 1] as [number, number]) : null,
     yName: '负荷率',
     height: 150,
-    series: [{
-      name: '全省火电负荷率（96 点 · 测算）',
-      type: 'line' as const,
-      showSymbol: false,
-      data: derived.lr96,
-      lineStyle: { type: 'dashed' as const, color: '#F59E0B', width: 1.5 },
-      itemStyle: { color: '#F59E0B' },
-    }],
+    series: [{ name: '全省火电负荷率（96 点 · 测算）', data: derived.lr96, color: '#F59E0B', dashed: true }],
+    thresholds: [{ yAxis: zeroLR, name: '零价点', color: '#94A3B8' }],
   }
   const spec24 = {
     labels: PERIOD_LABELS_24,
     markAreaIndex: selectedPeriod ? ([selectedPeriod - 1, selectedPeriod - 1] as [number, number]) : null,
     yName: '负荷率',
     height: 150,
-    series: [{
-      name: '24 点合成（每 4 点平均）',
-      type: 'line' as const,
-      showSymbol: false,
-      data: derived.lr24,
-      lineStyle: { type: 'dashed' as const, color: '#F59E0B', width: 1.5 },
-      itemStyle: { color: '#F59E0B' },
-    }],
+    series: [{ name: '24 点合成（每 4 点平均）', data: derived.lr24, color: '#F59E0B', dashed: true }],
+    thresholds: [{ yAxis: zeroLR, name: '零价点', color: '#94A3B8' }],
   }
 
   return (
     <section className="rounded-lg border border-[#334155] bg-[#0E1223]">
       <div className="flex items-center gap-2 border-b border-[#334155] px-3 py-2 text-xs">
         <span className="font-semibold text-[#94A3B8]">全省火电负荷率（派生值 · 不算边界 · 只读）</span>
-        <span className="rounded bg-[#F59E0B]/15 px-1.5 py-0.5 text-[9px] font-semibold text-[#F59E0B]">测算·虚线</span>
+        <span className="rounded bg-[#F59E0B]/15 px-1.5 py-0.5 text-[10px] font-semibold text-[#F59E0B]">测算·虚线</span>
         <span className="ml-auto text-[10px] text-[#94A3B8]">开机常量 {fmt(derived.unitOn, 1)} MW（demo 简化，非 11 步推演）</span>
       </div>
       <div className="grid grid-cols-2 gap-2 p-2">
@@ -200,7 +190,7 @@ function LandingSection() {
           ) : (
             <div className="rounded border border-dashed border-[#334155] p-3 text-center text-[11px] text-[#94A3B8]">样本不足（N={st.n} &lt; 3，不出概率）</div>
           )}
-          <div className="mt-1 text-[9px] text-[#94A3B8]">统计范围：{st.scope}｜成员：{st.members.map((d) => d.slice(5)).join('、') || '无'}</div>
+          <div className="mt-1 text-[10px] text-[#94A3B8]">统计范围：{st.scope}｜成员：{st.members.map((d) => d.slice(5)).join('、') || '无'}</div>
         </div>
 
         <div>
@@ -233,7 +223,7 @@ function LandingSection() {
               <div className="rounded border border-[#EF4444]/40 bg-[#EF4444]/5 p-2">
                 <div className="text-[#EF4444]">最大风险（卖方视角·贴下限）：{fmt(grey.maxRiskPrice?.[0])} ~ {fmt(grey.maxRiskPrice?.[1])} 元/MWh × {fmt(intent?.volume ?? null, 0)} MWh = <span className="font-semibold">{fmt(grey.maxRiskAmount?.[0], 0)} ~ {fmt(grey.maxRiskAmount?.[1], 0)} 元</span>（概率 {(grey.probRisk * 100).toFixed(1)}%）</div>
               </div>
-              <div className="text-[9px] text-[#94A3B8]">方向语义（挂牌卖/摘牌买符号）待业务方按滚撮"价差撮合"口径校正（登记项）</div>
+              <div className="text-[10px] text-[#94A3B8]">方向语义（挂牌卖/摘牌买符号）待业务方按滚撮"价差撮合"口径校正（登记项）</div>
             </div>
           ) : (
             <div className="rounded border border-dashed border-[#334155] p-3 text-center text-[11px] text-[#94A3B8]">{grey.reason ?? '不评估'}</div>

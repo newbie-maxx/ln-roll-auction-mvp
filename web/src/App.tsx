@@ -21,6 +21,9 @@ export default function App() {
   const [paramsOpen, setParamsOpen] = useState(false)
   const [exportNote, setExportNote] = useState<string | null>(null)
   const initLive = useWorkbench((s) => s.initLive)
+  const lastError = useWorkbench((s) => s.lastError)
+  const clearError = useWorkbench((s) => s.clearError)
+  const apiBusy = useWorkbench((s) => s.apiBusy)
 
   useEffect(() => { void initLive() }, [initLive])   // 后端可达 → live；否则降级 demo（横幅区分）
 
@@ -40,13 +43,13 @@ export default function App() {
         <nav className="ml-2 hidden flex-1 items-center gap-0.5 xl:flex">
           {STEPS.map((s, i) => (
             <span key={s} className="flex items-center">
-              <span className="rounded bg-[#1A1E2F] px-1.5 py-0.5 text-[9px] text-[#94A3B8]">{s}</span>
+              <span className="rounded bg-[#1A1E2F] px-1.5 py-0.5 text-[10px] text-[#94A3B8]">{s}</span>
               {i < STEPS.length - 1 && <span className="text-[#334155]">→</span>}
             </span>
           ))}
         </nav>
         <div className="ml-auto flex items-center gap-2">
-          <span className="hidden text-[9px] text-[#94A3B8] lg:inline">修订 {revisions.length} 条 · 输出刷新 {outputsFreshAt.slice(11, 19)}</span>
+          <span className="hidden text-[10px] text-[#94A3B8] lg:inline">修订 {revisions.length} 条 · 输出刷新 {outputsFreshAt.slice(11, 19)}</span>
           <button
             onClick={() => setParamsOpen(true)}
             className="cursor-pointer rounded border border-[#334155] px-2.5 py-1 text-xs text-[#F8FAFC] transition-colors duration-150 hover:border-[#3B82F6] hover:text-[#3B82F6]"
@@ -72,6 +75,19 @@ export default function App() {
           </button>
         </div>
       </header>
+      {lastError && (
+        <div role="alert" className="flex items-center gap-2 border-b border-[#EF4444]/50 bg-[#EF4444]/10 px-4 py-1.5 text-[11px] text-[#EF4444]">
+          <span className="font-semibold">操作失败</span>
+          <span className="flex-1">{lastError}</span>
+          <button onClick={clearError} className="cursor-pointer underline hover:text-[#F8FAFC]">知道了</button>
+        </div>
+      )}
+      {apiBusy && (
+        <div className="flex items-center gap-2 border-b border-[#3B82F6]/40 bg-[#3B82F6]/10 px-4 py-1 text-[11px] text-[#3B82F6]">
+          <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-[#3B82F6] border-t-transparent" aria-hidden="true" />
+          正在联动重算（后端 M1→M8）…
+        </div>
+      )}
       {exportNote && (
         <div className="border-b border-[#F59E0B]/40 bg-[#F59E0B]/10 px-4 py-1 text-[11px] text-[#F59E0B]">
           {exportNote} <button className="ml-2 cursor-pointer underline" onClick={() => setExportNote(null)}>知道了</button>

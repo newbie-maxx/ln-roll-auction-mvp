@@ -39,7 +39,37 @@ body {
     "PingFang SC", "Microsoft YaHei", monospace;
 }
 
+/* 可访问性：键盘焦点环（可见焦点，不依赖 :focus 的鼠标伪触发） */
+:focus-visible {
+  outline: 2px solid var(--color-disclosed);
+  outline-offset: 1px;
+  border-radius: 4px;
+}
+
+/* 交互状态（ui-ux-pro-max：150-300ms 过渡、不改布局边界的稳定态） */
+button, input, a {
+  transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease, opacity 150ms ease;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+/* 减少动态效果偏好 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+::selection {
+  background: rgba(59, 130, 246, 0.35);
+}
+
 /* 滚动条 */
 *::-webkit-scrollbar { width: 8px; height: 8px; }
 *::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 4px; }
+*::-webkit-scrollbar-thumb:hover { background: #475569; }
 *::-webkit-scrollbar-track { background: transparent; }

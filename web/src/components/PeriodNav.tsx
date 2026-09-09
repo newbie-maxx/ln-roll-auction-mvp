@@ -35,7 +35,7 @@ export function PeriodNav() {
                 <span className={`mono text-xs font-semibold ${selected ? 'text-[#EF4444]' : 'text-[#F8FAFC]'}`}>
                   {String(p - 1).padStart(2, '0')}:00–{String(p).padStart(2, '0')}:00
                 </span>
-                <span className="mono text-xs text-[#A855F7]">{fmt(price)}<span className="text-[9px] text-[#94A3B8]"> 元</span></span>
+                <span className="mono text-xs text-[#A855F7]">{fmt(price)}<span className="text-[10px] text-[#94A3B8]"> 元</span></span>
               </div>
               <div className="mt-0.5 flex justify-between text-[10px] text-[#94A3B8]">
                 <span>意向 <span className="mono text-[#22C55E]">{fmt(intent?.listPrice ?? null)}</span></span>

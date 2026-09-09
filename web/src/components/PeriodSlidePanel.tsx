@@ -26,7 +26,7 @@ function SlideCellEditor({ boundary, t, current, onClose }: { boundary: Boundary
       <div className="mb-2 text-xs text-[#94A3B8]">修改 {boundary} · t={t}（{TIME_LABELS_96[t - 1]}）</div>
       <input className="mono mb-2 w-full rounded border border-[#334155] bg-[#020617] px-2 py-1 text-sm text-[#F8FAFC] outline-none focus:border-[#3B82F6]" value={value} onChange={(e) => setValue(e.target.value)} placeholder="新值（MW）" autoFocus />
       <input className="mb-2 w-full rounded border border-[#334155] bg-[#020617] px-2 py-1 text-xs text-[#F8FAFC] outline-none focus:border-[#3B82F6]" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="修改理由（≥5 字，必填）" />
-      {error && <div className="mb-2 text-xs text-[#EF4444]">{error}</div>}
+      {error && <div id={`cell-edit-error`} role="alert" className="mb-2 text-xs text-[#EF4444]">{error}</div>}
       <div className="flex justify-end gap-2">
         <button onClick={onClose} className="cursor-pointer rounded px-2 py-1 text-xs text-[#94A3B8] hover:text-[#F8FAFC]">取消</button>
         <button onClick={save} className="cursor-pointer rounded bg-[#22C55E] px-3 py-1 text-xs font-semibold text-[#0F172A] hover:opacity-90">保存并重算</button>
@@ -61,18 +61,8 @@ export function PeriodSlidePanel({ period, onClose }: { period: number; onClose:
     yName: 'MW',
     height: 220,
     series: [
-      {
-        name: hasRevision ? '原值（披露）' : '披露值',
-        type: 'line' as const,
-        showSymbol: false,
-        data: base,
-        lineStyle: hasRevision ? { type: 'dashed' as const, color: '#3B82F6', width: 1, opacity: 0.6 } : { color: '#3B82F6', width: 1.5 },
-        itemStyle: { color: '#3B82F6' },
-      },
-      ...(hasRevision ? [{
-        name: '修订后', type: 'line' as const, showSymbol: false, data: effective,
-        lineStyle: { color: '#22C55E', width: 1.5 }, itemStyle: { color: '#22C55E' },
-      }] : []),
+      { name: hasRevision ? '原值（披露）' : '披露值', data: base, color: '#3B82F6', faded: hasRevision },
+      ...(hasRevision ? [{ name: '修订后', data: effective, color: '#22C55E' }] : []),
     ],
   }), [base, effective, hasRevision, hourIdx])
 
