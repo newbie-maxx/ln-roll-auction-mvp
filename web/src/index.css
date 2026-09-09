@@ -1,0 +1,45 @@
+@import "tailwindcss";
+
+/* 设计 tokens：design-system/ln-roll-auction-workbench/MASTER.md（Dark OLED, density 8）
+   字体按计划用中文系统字体栈，不引外网字体 */
+:root {
+  --color-primary: #0F172A;
+  --color-secondary: #1E293B;
+  --color-accent: #22C55E;
+  --color-background: #020617;
+  --color-foreground: #F8FAFC;
+  --color-card: #0E1223;
+  --color-muted: #1A1E2F;
+  --color-muted-foreground: #94A3B8;
+  --color-border: #334155;
+  --color-destructive: #EF4444;
+  /* 语义色：披露=实线蓝、测算=虚线橙、输出=紫徽标、选中=红、修订=绿 */
+  --color-disclosed: #3B82F6;
+  --color-derived: #F59E0B;
+  --color-output: #A855F7;
+  --color-selected: #EF4444;
+  --color-revised: #22C55E;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", sans-serif;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+
+.mono {
+  font-family: "SF Mono", ui-monospace, "Cascadia Mono", Menlo, Consolas,
+    "PingFang SC", "Microsoft YaHei", monospace;
+}
+
+/* 滚动条 */
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 4px; }
+*::-webkit-scrollbar-track { background: transparent; }
