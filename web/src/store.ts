@@ -1,5 +1,7 @@
-/** 工作台状态（zustand）：mock 加载 / 边界 / 参数 / 时段选择 / 修订 append-only（内存态）/ recalc。
- *  demo 计算 = web/src/calc（Phase 8 由后端替换，UI 标注"demo 计算"）。 */
+/** 工作台状态（zustand）：
+ *  - demo 模式：web/src/calc 本地计算（UI 标注 demo）。
+ *  - live 模式（Step 8）：数据/计算来自后端 API（web/src/api/client.ts），改动经 API 落 SQLite 留痕；
+ *    后端不可达时自动降级 demo（顶部横幅区分）。 */
 import { create } from 'zustand'
 import mockJson from './mock/boundaries.json'
 import { DEFAULT_PARAMS, validateParams, type Params } from './calc/params'
@@ -8,6 +10,7 @@ import { defaultUnitOn, loadRate96 } from './calc/loadRate'
 import { findA1Day, runPricing, type PricingOutput } from './calc/pricing'
 import { greyEvaluate, landingStats, similarDays, type GreyResult, type LandingStats } from './calc/probability'
 import { BOUNDARY_KEYS, type BoundaryKey, type Series24, type Series96 } from './calc/types'
+import { api, type BackendState } from './api/client'
 
 export interface MockPayload {
   dates: { D: string; A: string; A1: string; historyEnd: string }
@@ -21,11 +24,11 @@ export interface MockPayload {
 export interface Revision {
   id: string
   boundary: BoundaryKey
-  period: number          // 1–24（触发时段）
-  t: number               // 1–96（点位）
+  period: number
+  t: number
   oldValue: number | null
   newValue: number
-  reason: string          // ≥5 字
+  reason: string
   opTime: string
   rolledBack?: boolean
 }
@@ -40,8 +43,8 @@ export interface DerivedOutputs {
   lr96: Series96
   lr24: Series24
   pricing: PricingOutput
-  landing: LandingStats[]       // 24 时段
-  grey: GreyResult[]            // 24 时段
+  landing: LandingStats[]
+  grey: GreyResult[]
   a1Day: string
   a1NonPos: number
 }
@@ -50,14 +53,17 @@ export interface WorkbenchState {
   mode: 'demo' | 'live'
   data: MockPayload
   params: Params
-  unitOn: number                // demo 简化：开机全天常量
+  unitOn: number
   selectedPeriod: number | null
-  revisions: Revision[]         // append-only
+  revisions: Revision[]
   intents: Record<number, IntentEntry>
   paramLog: ParamChange[]
   derived: DerivedOutputs
   outputsFreshAt: string
+  chatBusy: boolean
+  llmInfo: { configured: boolean; model: string; baseUrl: string; maskedKey: string }
   // actions
+  initLive: () => Promise<boolean>
   selectPeriod: (p: number | null) => void
   setParams: (patch: Partial<Params> & { 开机常量?: number }, reason: string) => string | null
   modifyBoundary: (boundary: BoundaryKey, period: number, points: { t: number; value: number }[], reason: string) => string | null
@@ -68,8 +74,6 @@ export interface WorkbenchState {
 const DATA = mockJson as unknown as MockPayload
 const D_DAY = DATA.dates.D
 const A_DAY = DATA.dates.A
-
-/** 历史日（不含 D 日）升序 */
 const HISTORY_DAYS = DATA.days.filter((d) => d !== D_DAY)
 
 function boundarySeries(day: string, key: string): Series96 {
@@ -77,17 +81,11 @@ function boundarySeries(day: string, key: string): Series96 {
   return (raw ?? new Array(96).fill(null)).map((v) => (typeof v === 'number' && Number.isFinite(v) ? v : null))
 }
 
-function spaceOf(day: string): Series96 {
-  const inputs = {} as Record<BoundaryKey, Series96>
-  for (const k of BOUNDARY_KEYS) inputs[k] = boundarySeries(day, k)
-  return biddingSpace(inputs as SpaceInputs)
-}
-
 function realtimePrice24(day: string): Series24 {
   return to24((DATA.realtime.实时电价[day] ?? []).map((v) => (Number.isFinite(v) ? v : null)))
 }
 
-/** 全链重算（demo：任意改动后全量重算，24 时段落点/灰度一并刷新） */
+/** demo：全链重算（任意改动后全量刷新 24 时段落点/灰度） */
 function recalcDerived(params: Params, unitOn: number, revisions: Revision[], intents: Record<number, IntentEntry>): DerivedOutputs {
   const dEffective = {} as Record<BoundaryKey, Series96>
   for (const k of BOUNDARY_KEYS) dEffective[k] = boundarySeries(D_DAY, k).slice()
@@ -98,8 +96,11 @@ function recalcDerived(params: Params, unitOn: number, revisions: Revision[], in
   const lr96 = loadRate96(space96, unitOn)
   const lr24 = to24(lr96)
 
-  // A / A-1（回溯）日空间与电价
-  const aSpace = spaceOf(A_DAY)
+  const spaceOf = (day: string) => {
+    const inputs = {} as Record<BoundaryKey, Series96>
+    for (const k of BOUNDARY_KEYS) inputs[k] = boundarySeries(day, k)
+    return biddingSpace(inputs as SpaceInputs)
+  }
   const pricesByDay: Record<string, Series96> = {}
   for (const d of HISTORY_DAYS) pricesByDay[d] = boundarySeries(d, '日前电价')
   const { day: a1Day, nonPosPoints } = findA1Day(HISTORY_DAYS, pricesByDay, A_DAY)
@@ -108,7 +109,7 @@ function recalcDerived(params: Params, unitOn: number, revisions: Revision[], in
     dSpace96: space96,
     dUnitOn: unitOn,
     zeroLoadRate: params.零价点负荷率,
-    aDaySpace96: aSpace,
+    aDaySpace96: spaceOf(A_DAY),
     aDayPrice96: boundarySeries(A_DAY, '日前电价'),
     a1DaySpace96: spaceOf(a1Day),
     a1DayPrice96: pricesByDay[a1Day],
@@ -143,8 +144,83 @@ function recalcDerived(params: Params, unitOn: number, revisions: Revision[], in
 const defaultIntents: Record<number, IntentEntry> = Object.fromEntries(
   Array.from({ length: 24 }, (_, i) => [i + 1, { ...DATA.intentDefault }]),
 )
-
 const initialUnitOn = defaultUnitOn(boundarySeries(D_DAY, '日前开机'))
+
+/** live：后端状态 → 组件消费的 DerivedOutputs 形状 */
+function mapBackend(st: BackendState): { derived: DerivedOutputs; params: Params; revisions: Revision[]; intents: Record<number, IntentEntry> } {
+  const params = { ...DEFAULT_PARAMS, ...(st.params as Partial<Params>) }
+  const revisions: Revision[] = (st.revisions ?? []).map((r) => ({
+    id: r.rev_id,
+    boundary: r.boundary_type as BoundaryKey,
+    period: r.period ?? Math.ceil(r.t / 4),
+    t: r.t,
+    oldValue: null,
+    newValue: r.revised_value,
+    reason: r.reason,
+    opTime: r.op_time,
+    rolledBack: r.status !== '有效',
+  }))
+  const intents: Record<number, IntentEntry> = {}
+  for (const [p, v] of Object.entries(st.intents ?? {})) {
+    intents[Number(p)] = { listPrice: v.listPrice, liftPrice: v.liftPrice, volume: v.volume }
+  }
+  const p8 = st.m8
+  const derived: DerivedOutputs = {
+    unitOn: st.m7.final_on_96?.[0] ?? initialUnitOn,
+    space96: st.m7.space_96,
+    lr96: st.m7.load_rate_96,
+    lr24: st.m7.load_rate_24,
+    pricing: {
+      criticalSpace96: p8.critical_space_96,
+      criticalSpace24: p8.critical_space_24,
+      k: p8.k, M1: p8.M1, C1: p8.C1, M2: p8.M2, C2: p8.C2,
+      pred1_96: p8.pred1_96, pred2_96: p8.pred2_96, final_96: p8.final_96,
+      pred1_24: p8.pred1_24, pred2_24: p8.pred2_24, final_24: p8.final_24,
+      usedPred2_96: p8.used_pred2_96, usedPred2_24: p8.used_pred2_24,
+      minPred1_96: p8.min_pred1_96,
+    },
+    landing: st.landing_24.map((l) => ({
+      members: l.members, n: l.n, bins: l.bins, outOfRange: l.out_of_range,
+      expectation: l.expectation, enough: l.enough,
+      numerator: l.n, denominator: l.n, scope: l.scope,
+    })),
+    grey: st.grey_24.map((g) => ({
+      evaluated: g.evaluated, reason: g.reason ?? undefined,
+      lowestBin: { ...g.lowest_bin, mid: (g.lowest_bin.lo + g.lowest_bin.hi) / 2, count: 0 },
+      highestBin: { ...g.highest_bin, mid: (g.highest_bin.lo + g.highest_bin.hi) / 2, count: 0 },
+      maxGainPrice: g.max_gain_price, maxRiskPrice: g.max_risk_price,
+      maxGainAmount: g.max_gain_amount, maxRiskAmount: g.max_risk_amount,
+      probGain: g.prob_gain, probRisk: g.prob_risk,
+    })),
+    a1Day: p8.a1_day,
+    a1NonPos: p8.a1_non_pos_points,
+  }
+  return { derived, params, revisions, intents }
+}
+
+
+/** 原始（未修订）边界序列缓存（live 模式），供修订曲线并存 */
+let liveBoundaries: Record<string, Series96> | null = null
+
+export function cacheLiveBoundaries(b: Record<string, Series96>) {
+  liveBoundaries = b
+}
+
+/** 后端拉取后统一刷新 live 状态（含边界原值缓存；extra 附加补丁如参数留痕） */
+async function refreshLive(extra?: Partial<WorkbenchState>): Promise<void> {
+  const st = await api.state()
+  const { derived, params, revisions, intents } = mapBackend(st)
+  const bounds: Record<string, Series96> = {}
+  for (const [k, v] of Object.entries(st.boundaries ?? {})) bounds[k] = v.values
+  cacheLiveBoundaries(bounds)
+  const patch: Record<string, unknown> = {
+    derived, params, revisions, unitOn: derived.unitOn,
+    outputsFreshAt: new Date().toISOString(),
+  }
+  if (Object.keys(intents).length > 0) patch['intents'] = intents
+  useWorkbench.setState(patch as Partial<WorkbenchState>)
+  if (extra) useWorkbench.setState(extra)
+}
 
 export const useWorkbench = create<WorkbenchState>((set, get) => ({
   mode: 'demo',
@@ -157,11 +233,52 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
   paramLog: [],
   derived: recalcDerived({ ...DEFAULT_PARAMS }, initialUnitOn, [], defaultIntents),
   outputsFreshAt: new Date().toISOString(),
+  chatBusy: false,
+  llmInfo: { configured: false, model: '', baseUrl: '', maskedKey: '' },
+
+  initLive: async () => {
+    try {
+      const st = await api.state()
+      const { derived, params, revisions, intents } = mapBackend(st)
+      const bounds: Record<string, Series96> = {}
+      for (const [k, v] of Object.entries(st.boundaries ?? {})) bounds[k] = v.values
+      cacheLiveBoundaries(bounds)
+      let llmInfo = get().llmInfo
+      try {
+        const cfg = await api.llmConfig()
+        llmInfo = { configured: cfg.configured, model: cfg.model, baseUrl: cfg.base_url, maskedKey: cfg.api_key_masked }
+      } catch { /* 配置接口失败不阻塞 live */ }
+      set({
+        mode: 'live', derived, params, revisions,
+        intents: Object.keys(intents).length ? intents : get().intents,
+        unitOn: derived.unitOn,
+        outputsFreshAt: new Date().toISOString(),
+        llmInfo,
+      })
+      return true
+    } catch {
+      set({ mode: 'demo' })
+      return false
+    }
+  },
 
   selectPeriod: (p) => set({ selectedPeriod: p }),
 
   setParams: (patch, reason) => {
     const { 开机常量, ...paramPatch } = patch
+    if (get().mode === 'live') {
+      // live 模式开机由 M7 11 步推演产出（开机常量为 demo 简化参数，忽略）
+      const payload: Record<string, number> = {}
+      api.setParams(payload, reason)
+        .then(() => refreshLive({
+          paramLog: [...get().paramLog, {
+            time: new Date().toLocaleString('zh-CN'),
+            changes: Object.entries(payload).map(([k, v]) => `${k}=${v}`).join('，'),
+            reason,
+          }],
+        }))
+      return null
+    }
     const next = { ...get().params, ...paramPatch }
     const errs = validateParams(next)
     if (errs.length > 0) return errs.join('；')
@@ -172,9 +289,7 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
     const changes = Object.entries({ ...paramPatch, ...(开机常量 !== undefined ? { 开机常量 } : {}) })
       .map(([k, v]) => `${k}=${v}`).join('，')
     set({
-      params: next,
-      unitOn,
-      derived,
+      params: next, unitOn, derived,
       outputsFreshAt: new Date().toISOString(),
       paramLog: [...get().paramLog, { time: new Date().toLocaleString('zh-CN'), changes, reason }],
     })
@@ -182,6 +297,12 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
   },
 
   modifyBoundary: (boundary, period, points, reason) => {
+    if (get().mode === 'live') {
+      api.modifyBoundary(boundary, period, points, reason)
+        .then(() => refreshLive())
+        .catch((e: Error) => console.error('modifyBoundary failed:', e.message))
+      return null
+    }
     if (reason.trim().length < 5) return '修改理由须 ≥5 字'
     if (!BOUNDARY_KEYS.includes(boundary)) return `非法边界 ${boundary}`
     const base = boundarySeries(D_DAY, boundary)
@@ -190,13 +311,10 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
       if (pt.t < 1 || pt.t > 96 || !Number.isFinite(pt.value)) throw new Error(`非法点位 t=${pt.t}`)
       return {
         id: `R${now.getTime().toString(36)}-${period}-${boundary}-${pt.t}-${i}`,
-        boundary,
-        period,
-        t: pt.t,
+        boundary, period, t: pt.t,
         oldValue: base[pt.t - 1] ?? null,
         newValue: pt.value,
-        reason,
-        opTime: now.toISOString(),
+        reason, opTime: now.toISOString(),
       }
     })
     const revisions = [...get().revisions, ...newRevs]
@@ -206,6 +324,16 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
   },
 
   setIntent: (period, patch) => {
+    if (get().mode === 'live') {
+      api.setIntent(period, {
+        list_price: patch.listPrice ?? undefined,
+        lift_price: patch.liftPrice ?? undefined,
+        volume: patch.volume ?? undefined,
+      })
+        .then(() => refreshLive())
+        .catch((e: Error) => console.error('setIntent failed:', e.message))
+      return
+    }
     const cur = get().intents[period] ?? { ...DATA.intentDefault }
     const next = { ...cur, ...patch }
     if (next.listPrice !== null && next.listPrice <= 0) return
@@ -217,19 +345,23 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
   },
 
   rollback: (revId) => {
-    // 回退本身记新修订：以回退标记实现（原值经读时合并恢复，append-only 不物理删除）
+    if (get().mode === 'live') {
+      api.rollback(revId)
+        .then(() => refreshLive())
+        .catch((e: Error) => console.error('rollback failed:', e.message))
+      return
+    }
     const revisions = get().revisions.map((r) => (r.id === revId ? { ...r, rolledBack: true } : r))
     const derived = recalcDerived(get().params, get().unitOn, revisions, get().intents)
     set({ revisions, derived, outputsFreshAt: new Date().toISOString() })
   },
 }))
 
-/** 原始（未修订）边界序列，供修订曲线并存 */
 export function originalBoundary(key: BoundaryKey): Series96 {
+  if (liveBoundaries && liveBoundaries[key]) return liveBoundaries[key]
   return boundarySeries(D_DAY, key)
 }
 
-/** 某边界当前生效修订（未回退的最新一条），供数值格显示 新值/理由 */
 export function latestRevisionAt(revisions: Revision[], key: BoundaryKey, t: number): Revision | undefined {
   let hit: Revision | undefined
   for (const rev of revisions) {

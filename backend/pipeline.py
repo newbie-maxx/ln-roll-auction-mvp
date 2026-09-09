@@ -42,13 +42,15 @@ class ChainResult:
             "params": self.params.as_dict(),
             "run_id": self.run_id,
             "m1": {"roll_source": self.m1["roll_source"], "warnings": self.m1["warnings"]},
-            "m6": {"predicted_96": self.m6["predicted_96"], "kind": self.m6["kind"]},
             "m7": {
                 "mode": self.m7["mode"], "final_on_96": self.m7["final_on_96"],
+                "space_96": self.m7["space_96"],
                 "load_rate_96": self.m7["load_rate_96"], "load_rate_24": self.m7["load_rate_24"],
                 "note_step6": self.m7.get("note_step6"),
             },
             "m8": self.m8,
+            "landing_24": self.landing,
+            "grey_24": self.grey,
             "timings_ms": self.timings_ms,
         }
         if period is not None and 1 <= period <= 24:

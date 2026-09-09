@@ -1,6 +1,6 @@
 /** 决策工作台主页面（一屏三栏）：左 280 时段导航 / 中 展示区（边界+输出）/ 右 360 助手。
  *  顶栏：标题 + 日期角色徽标 + M1→M8 stepper + 全局参数/导出。≥1440 布局 + 1280 降级。 */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { PeriodNav } from './components/PeriodNav'
 import { BoundarySection } from './components/BoundarySection'
 import { OutputSection } from './components/OutputSection'
@@ -8,6 +8,7 @@ import { AssistantPanel } from './components/AssistantPanel'
 import { GlobalParamsDrawer } from './components/GlobalParamsDrawer'
 import { PeriodSlidePanel } from './components/PeriodSlidePanel'
 import { D_DAY, A_DAY, useWorkbench } from './store'
+import { api, ApiError } from './api/client'
 
 const STEPS = ['M1 装载', 'M2 分布式', 'M3 相似日', 'M4 基线', 'M5 省间', 'M6 预测联络线', 'M7 开机/负荷率', 'M8 电价']
 
@@ -19,6 +20,9 @@ export default function App() {
   const outputsFreshAt = useWorkbench((s) => s.outputsFreshAt)
   const [paramsOpen, setParamsOpen] = useState(false)
   const [exportNote, setExportNote] = useState<string | null>(null)
+  const initLive = useWorkbench((s) => s.initLive)
+
+  useEffect(() => { void initLive() }, [initLive])   // 后端可达 → live；否则降级 demo（横幅区分）
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-[#020617] text-[#F8FAFC]">
@@ -50,7 +54,18 @@ export default function App() {
             全局参数
           </button>
           <button
-            onClick={() => setExportNote(`导出占位：正式版经 /api/export 产出 CSV（披露/测算标注 + 来源日）；当前 ${revisions.length} 条修订将随导出留痕`)}
+            onClick={async () => {
+              if (mode === 'live') {
+                try {
+                  const r = await api.exportReport()
+                  setExportNote(`已导出：${r.path}（披露/测算标注 + 来源日，修订随导出留痕）`)
+                } catch (e) {
+                  setExportNote(`导出失败：${e instanceof ApiError ? e.message : String(e)}`)
+                }
+              } else {
+                setExportNote(`demo 模式：导出走后端 /api/export；当前 ${revisions.length} 条修订将随导出留痕`)
+              }
+            }}
             className="cursor-pointer rounded bg-[#22C55E] px-2.5 py-1 text-xs font-semibold text-[#0F172A] transition-opacity duration-150 hover:opacity-90"
           >
             导出
