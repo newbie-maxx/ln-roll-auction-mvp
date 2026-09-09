@@ -6,8 +6,9 @@ import { BoundarySection } from './components/BoundarySection'
 import { OutputSection } from './components/OutputSection'
 import { AssistantPanel } from './components/AssistantPanel'
 import { GlobalParamsDrawer } from './components/GlobalParamsDrawer'
+import { DataManageDrawer } from './components/DataManageDrawer'
 import { PeriodSlidePanel } from './components/PeriodSlidePanel'
-import { D_DAY, A_DAY, useWorkbench } from './store'
+import { D_DAY as D_DAY_BASE, A_DAY as A_DAY_BASE, useWorkbench } from './store'
 import { api, ApiError } from './api/client'
 
 const STEPS = ['边界数据装载', '分布式新能源推断', '相似日检索', '联络线基线', '省间交易总数', '预测联络线', '开机推演与负荷率', '电价预测与落点']
@@ -19,6 +20,11 @@ export default function App() {
   const revisions = useWorkbench((s) => s.revisions)
   const outputsFreshAt = useWorkbench((s) => s.outputsFreshAt)
   const [paramsOpen, setParamsOpen] = useState(false)
+  const [dataOpen, setDataOpen] = useState(false)
+  const dayInfo = useWorkbench((s) => s.dayInfo)
+  const setTargetDayAction = useWorkbench((s) => s.setTargetDay)
+  const D_DAY = dayInfo?.target_day ?? D_DAY_BASE
+  const A_DAY = dayInfo?.a_day ?? A_DAY_BASE
   const [exportNote, setExportNote] = useState<string | null>(null)
   const initLive = useWorkbench((s) => s.initLive)
   const lastError = useWorkbench((s) => s.lastError)
@@ -36,9 +42,19 @@ export default function App() {
           {mode === 'demo' ? 'demo 数据 · demo 计算' : '实时计算'}
         </span>
         <div className="flex items-center gap-1 text-[10px]">
-          <span className="rounded bg-[#EF4444]/20 px-1.5 py-0.5 font-semibold text-[#EF4444]">D 日 {D_DAY.slice(5)}（预测对象）</span>
+          <span className="rounded bg-[#EF4444]/20 px-1.5 py-0.5 font-semibold text-[#EF4444]">滚撮日 {D_DAY.slice(5)}（预测对象）</span>
           <span className="rounded bg-[#3B82F6]/20 px-1.5 py-0.5 text-[#3B82F6]">A 日 {A_DAY.slice(5)}</span>
-          <span className="rounded bg-[#94A3B8]/20 px-1.5 py-0.5 text-[#94A3B8]">历史 08-01…08-30</span>
+          <span className="rounded bg-[#94A3B8]/20 px-1.5 py-0.5 text-[#94A3B8]">历史 {dayInfo ? `${dayInfo.history_count} 日（该日之前）` : '08-01…08-30'}</span>
+          <select
+            aria-label="选择滚撮日"
+            className="mono ml-1 cursor-pointer rounded border border-[#334155] bg-[#0E1223] px-1.5 py-0.5 text-[10px] text-[#F8FAFC] outline-none focus:border-[#3B82F6]"
+            value={D_DAY}
+            onChange={(e) => setTargetDayAction(e.target.value)}
+          >
+            {(dayInfo?.available_days ?? []).slice().reverse().map((d) => (
+              <option key={d} value={d}>{d.slice(5)}</option>
+            ))}
+          </select>
         </div>
         <nav className="ml-2 hidden flex-1 items-center gap-0.5 xl:flex">
           {STEPS.map((s, i) => (
@@ -50,6 +66,12 @@ export default function App() {
         </nav>
         <div className="ml-auto flex items-center gap-2">
           <span className="hidden text-[10px] text-[#94A3B8] lg:inline">修订 {revisions.length} 条 · 输出刷新 {outputsFreshAt.slice(11, 19)}</span>
+          <button
+            onClick={() => setDataOpen(true)}
+            className="cursor-pointer rounded border border-[#334155] px-2.5 py-1 text-xs text-[#F8FAFC] transition-colors duration-150 hover:border-[#F59E0B] hover:text-[#F59E0B]"
+          >
+            数据管理
+          </button>
           <button
             onClick={() => setParamsOpen(true)}
             className="cursor-pointer rounded border border-[#334155] px-2.5 py-1 text-xs text-[#F8FAFC] transition-colors duration-150 hover:border-[#3B82F6] hover:text-[#3B82F6]"
@@ -114,6 +136,7 @@ export default function App() {
       </div>
 
       <GlobalParamsDrawer open={paramsOpen} onClose={() => setParamsOpen(false)} />
+      <DataManageDrawer open={dataOpen} onClose={() => setDataOpen(false)} />
     </div>
   )
 }

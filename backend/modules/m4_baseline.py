@@ -20,11 +20,11 @@ def day_baseline(data: LoadedData, day: str) -> list[float | None] | None:
     return out if all(v is not None for v in out) else None
 
 
-def run_m4(data: LoadedData, params: Params, m3_result: dict) -> dict:
+def run_m4(data: LoadedData, params: Params, m3_result: dict, d_day: str = D_DAY) -> dict:
     baselines: dict[str, list[float | None]] = {}
     missing_days: list[str] = []
     for day in data.days:
-        if day == D_DAY:
+        if day >= d_day:          # 历史范围自动收窄：仅 D 日之前参与基线
             continue
         b = day_baseline(data, day)
         if b is None:

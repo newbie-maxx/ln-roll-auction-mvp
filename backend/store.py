@@ -55,10 +55,13 @@ class Store:
         self.conn.executescript(SCHEMA)
 
     # ---------- 计算版本 ----------
-    def new_run(self, date: str, params_snapshot: dict, m7_mode: str = "系统开机推演") -> str:
-        run_id = f"run-{uuid.uuid4().hex[:8]}"
+    def new_run(self, date: str, params_snapshot: dict, m7_mode: str = "系统开机推演",
+                run_id: str | None = None) -> str:
+        """run_id 缺省自动生成；显式传入稳定键（数据版本:滚撮日）时幂等复用——
+        切换滚撮日再切回，修订链按同一键继续生效（不丢）。"""
+        run_id = run_id or f"run-{uuid.uuid4().hex[:8]}"
         self.conn.execute(
-            "INSERT INTO calc_run(run_id, date, calc_mode, params_snapshot, m7_mode, created_at, status) VALUES(?,?,?,?,?,?,?)",
+            "INSERT OR REPLACE INTO calc_run(run_id, date, calc_mode, params_snapshot, m7_mode, created_at, status) VALUES(?,?,?,?,?,?,?)",
             (run_id, date, "系统开机推演", json.dumps(params_snapshot, ensure_ascii=False), m7_mode, _now(), "有效"),
         )
         self.conn.commit()
@@ -92,8 +95,16 @@ class Store:
         self.conn.commit()
         return rev_id
 
-    def effective_value(self, boundary_id: str, boundary_type: str, t: int) -> float | None:
-        """读时合并：最新有效修订 → 主表原值。"""
+    def effective_value(self, boundary_id: str, boundary_type: str, t: int, run_id: str | None = None) -> float | None:
+        """读时合并：最新有效修订 → 主表原值。传 run_id 时仅取该数据版本/滚撮日的修订与主表
+        （数据底账更换或滚撮日切换后，旧修订保留可审计但不再作用于新口径）。"""
+        if run_id:
+            # 严格 run 隔离：数据版本/滚撮日之外的修订与主表一律不可见（None = 无修订，回到内存原值）
+            rev = self.conn.execute(
+                "SELECT revised_value FROM boundary_revision WHERE boundary_id=? AND boundary_type=? AND t=? AND run_id=? AND status='有效' "
+                "ORDER BY op_time DESC LIMIT 1", (boundary_id, boundary_type, t, run_id),
+            ).fetchone()
+            return rev["revised_value"] if rev is not None else None
         rev = self.conn.execute(
             "SELECT revised_value FROM boundary_revision WHERE boundary_id=? AND boundary_type=? AND t=? AND status='有效' "
             "ORDER BY op_time DESC LIMIT 1", (boundary_id, boundary_type, t),

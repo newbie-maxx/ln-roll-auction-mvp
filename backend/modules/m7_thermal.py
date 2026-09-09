@@ -186,9 +186,9 @@ def manual_mode(on_96: list[float], space: list[float | None]) -> dict:
     }
 
 
-def thermal_input_from(data: LoadedData, tieline_96: list[float | None]) -> ThermalInput:
-    """从装载结果组装 D 日 M7 输入（联络线 = M6 预测联络线）。"""
-    da = data.day_ahead[D_DAY]
+def thermal_input_from(data: LoadedData, tieline_96: list[float | None], d_day: str = D_DAY) -> ThermalInput:
+    """从装载结果组装所选滚撮日的 M7 输入（联络线 = M6 预测联络线）。"""
+    da = data.day_ahead[d_day]
     return ThermalInput(
         load=da["负荷"].values, hydro=da["水电"].values, nuclear=da["核电"].values,
         coal=da["地方燃煤"].values, wind=da["风电"].values, solar=da["光伏"].values,

@@ -31,8 +31,19 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return resp.json() as Promise<T>
 }
 
+export interface DayInfo {
+  target_day: string
+  a_day: string
+  available_days: string[]
+  all_days: string[]
+  history_count: number
+  dataset_version: number
+  roll_source: string
+}
+
 export interface BackendState {
-  dates: { D: string }
+  day_info?: DayInfo
+  dates: { D: string; A?: string; A1?: string }
   params: Record<string, unknown>
   run_id: string
   m7: { mode: string; final_on_96: number[]; space_96: (number | null)[]; load_rate_96: (number | null)[]; load_rate_24: (number | null)[] }
@@ -83,6 +94,28 @@ export const api = {
     request<{ ok: boolean; reply: string | null; error?: string; tool_calls?: unknown[] }>('/api/chat', {
       method: 'POST', body: JSON.stringify({ message, period }),
     }),
+  days: () => request<DayInfo>('/api/days'),
+  setTargetDay: (date: string) =>
+    request<{ ok: boolean; day_info: DayInfo }>('/api/target-day', { method: 'POST', body: JSON.stringify({ date }) }),
+  uploadData: async (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    let resp: Response
+    try {
+      resp = await fetch(`${API_BASE}/api/data/upload`, { method: 'POST', body: form })
+    } catch {
+      throw new ApiError('后端不可达（未启动 uvicorn api:app？）')
+    }
+    const body = await resp.json().catch(() => ({}))
+    if (!resp.ok) {
+      const detail = body.detail
+      if (detail && typeof detail === 'object') {
+        throw new ApiError(`格式校验未通过：${(detail.report?.errors ?? []).join('；')}`)
+      }
+      throw new ApiError(typeof detail === 'string' ? detail : `${resp.status}`)
+    }
+    return body as { ok: boolean; kind: string; report: { days: string[] }; dataset: { days: number }; day_info: DayInfo }
+  },
   llmConfig: () => request<{ base_url: string; model: string; api_key_masked: string; configured: boolean }>('/api/llm/config'),
   setLlmConfig: (baseUrl: string, apiKey: string, model: string) =>
     request<{ ok: boolean }>('/api/llm/config', { method: 'POST', body: JSON.stringify({ base_url: baseUrl, api_key: apiKey, model }) }),

@@ -10,7 +10,7 @@ import { defaultUnitOn, loadRate96 } from './calc/loadRate'
 import { findA1Day, runPricing, type PricingOutput } from './calc/pricing'
 import { greyEvaluate, landingStats, similarDays, type GreyResult, type LandingStats } from './calc/probability'
 import { BOUNDARY_KEYS, type BoundaryKey, type Series24, type Series96 } from './calc/types'
-import { api, type BackendState } from './api/client'
+import { api, type BackendState, type DayInfo } from './api/client'
 
 export interface MockPayload {
   dates: { D: string; A: string; A1: string; historyEnd: string }
@@ -63,6 +63,7 @@ export interface WorkbenchState {
   chatBusy: boolean
   lastError: string | null
   apiBusy: boolean
+  dayInfo: DayInfo | null
   llmInfo: { configured: boolean; model: string; baseUrl: string; maskedKey: string }
   // actions
   initLive: () => Promise<boolean>
@@ -72,6 +73,8 @@ export interface WorkbenchState {
   setIntent: (period: number, patch: Partial<IntentEntry>) => void
   rollback: (revId: string) => void
   clearError: () => void
+  setTargetDay: (date: string) => void
+  uploadData: (file: File) => Promise<{ ok: boolean; message?: string }>
 }
 
 const DATA = mockJson as unknown as MockPayload
@@ -150,7 +153,7 @@ const defaultIntents: Record<number, IntentEntry> = Object.fromEntries(
 const initialUnitOn = defaultUnitOn(boundarySeries(D_DAY, '日前开机'))
 
 /** live：后端状态 → 组件消费的 DerivedOutputs 形状 */
-function mapBackend(st: BackendState): { derived: DerivedOutputs; params: Params; revisions: Revision[]; intents: Record<number, IntentEntry> } {
+function mapBackend(st: BackendState): { derived: DerivedOutputs; params: Params; revisions: Revision[]; intents: Record<number, IntentEntry>; dayInfo: DayInfo | null } {
   const params = { ...DEFAULT_PARAMS, ...(st.params as Partial<Params>) }
   const revisions: Revision[] = (st.revisions ?? []).map((r) => ({
     id: r.rev_id,
@@ -198,7 +201,7 @@ function mapBackend(st: BackendState): { derived: DerivedOutputs; params: Params
     a1Day: p8.a1_day,
     a1NonPos: p8.a1_non_pos_points,
   }
-  return { derived, params, revisions, intents }
+  return { derived, params, revisions, intents, dayInfo: st.day_info ?? null }
 }
 
 /** 原始（未修订）边界序列缓存（live 模式），供修订曲线并存 */
@@ -215,7 +218,7 @@ export const useWorkbench = create<WorkbenchState>((set, get) => {
     try {
       await fn()
       const st = await api.state()
-      const { derived, params, revisions, intents } = mapBackend(st)
+      const { derived, params, revisions, intents, dayInfo } = mapBackend(st)
       const bounds: Record<string, Series96> = {}
       for (const [k, v] of Object.entries(st.boundaries ?? {})) bounds[k] = v.values
       cacheLiveBoundaries(bounds)
@@ -223,6 +226,7 @@ export const useWorkbench = create<WorkbenchState>((set, get) => {
         derived, params, revisions, unitOn: derived.unitOn,
         outputsFreshAt: new Date().toISOString(),
         apiBusy: false,
+        ...(dayInfo ? { dayInfo } : {}),
       }
       if (Object.keys(intents).length > 0) patch.intents = intents
       set(patch)
@@ -246,16 +250,18 @@ export const useWorkbench = create<WorkbenchState>((set, get) => {
     chatBusy: false,
     lastError: null,
     apiBusy: false,
+    dayInfo: null,
     llmInfo: { configured: false, model: '', baseUrl: '', maskedKey: '' },
 
     initLive: async () => {
       try {
         const st = await api.state()
-        const { derived, params, revisions, intents } = mapBackend(st)
+        const { derived, params, revisions, intents, dayInfo } = mapBackend(st)
         const bounds: Record<string, Series96> = {}
         for (const [k, v] of Object.entries(st.boundaries ?? {})) bounds[k] = v.values
         cacheLiveBoundaries(bounds)
         let llmInfo = get().llmInfo
+        if (dayInfo) set({ dayInfo })
         try {
           const cfg = await api.llmConfig()
           llmInfo = { configured: cfg.configured, model: cfg.model, baseUrl: cfg.base_url, maskedKey: cfg.api_key_masked }
@@ -277,6 +283,37 @@ export const useWorkbench = create<WorkbenchState>((set, get) => {
     selectPeriod: (p) => set({ selectedPeriod: p }),
 
     clearError: () => set({ lastError: null }),
+
+    setTargetDay: (date) => {
+      if (get().mode !== 'live') return
+      void liveCall(() => api.setTargetDay(date), `滚撮日切换为 ${date}`)
+    },
+
+    uploadData: async (file) => {
+      if (get().mode !== 'live') {
+        return { ok: false, message: 'demo 模式不支持上传（需后端在线）' }
+      }
+      set({ apiBusy: true, lastError: null })
+      try {
+        const r = await api.uploadData(file)
+        const st = await api.state()
+        const { derived, params, revisions, intents, dayInfo } = mapBackend(st)
+        const bounds: Record<string, Series96> = {}
+        for (const [k, v] of Object.entries(st.boundaries ?? {})) bounds[k] = v.values
+        cacheLiveBoundaries(bounds)
+        set({
+          apiBusy: false, derived, params, revisions, unitOn: derived.unitOn,
+          ...(dayInfo ? { dayInfo } : {}),
+          ...(Object.keys(intents).length ? { intents } : {}),
+          outputsFreshAt: new Date().toISOString(),
+        })
+        return { ok: true, message: `已合并 ${r.kind === 'day_ahead' ? '日前边界表' : r.kind === 'realtime' ? '实时边界表' : '省间滚撮表'}：新增/覆盖 ${r.report.days.length} 日；当前滚撮日 ${r.day_info.target_day}（A 日 ${r.day_info.a_day}）` }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        set({ apiBusy: false, lastError: `上传失败：${msg}` })
+        return { ok: false, message: msg }
+      }
+    },
 
     setParams: (patch, reason) => {
       const { 开机常量, ...paramPatch } = patch

@@ -20,10 +20,10 @@ def compute_spot(data: LoadedData, day: str) -> list[float | None]:
     return out
 
 
-def run_m5(data: LoadedData, params: Params) -> dict:
-    roll24 = data.roll_auction[D_DAY]["volume24"]
+def run_m5(data: LoadedData, params: Params, d_day: str = D_DAY) -> dict:
+    roll24 = data.roll_auction[d_day]["volume24"]
     roll96 = expand24to96(list(roll24))
-    spot96 = compute_spot(data, D_DAY)
+    spot96 = compute_spot(data, d_day)
     total96: list[float | None] = []
     warnings: list[str] = []
     for t in range(96):
@@ -37,7 +37,7 @@ def run_m5(data: LoadedData, params: Params) -> dict:
             total96.append(r + s)
 
     # 历史日自算省间现货（边界展示项，逐日）
-    hist_spot = {d: compute_spot(data, d) for d in data.days if d != D_DAY}
+    hist_spot = {d: compute_spot(data, d) for d in data.days if d < d_day}
     return {
         "roll_volume_96": roll96,
         "roll_price_24": data.roll_auction[D_DAY]["price24"],
@@ -46,7 +46,7 @@ def run_m5(data: LoadedData, params: Params) -> dict:
         "warnings": warnings,
         "history_spot_96": hist_spot,           # 边界展示项
         "roll_source": data.roll_source,
-        "formula": "省间交易总数(96) = 滚撮量(24→96 展开) + 省间现货；现货恒等式 = 日前联络线 − 实时联络线",
+        "d_day": d_day, "formula": "省间交易总数(96) = 滚撮量(24→96 展开) + 省间现货；现货恒等式 = 日前联络线 − 实时联络线",
         "spot_note": f"运行日现货为辅助推测（带把握说明）；A 日 {A_DAY} 同口径",
     }
 

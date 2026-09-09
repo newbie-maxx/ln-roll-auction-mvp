@@ -9,13 +9,13 @@ import csv
 import time
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .config import D_DAY, EXPORT_DIR, env_llm
+from .config import EXPORT_DIR, env_llm
 from .pipeline import BOUNDARY_WHITELIST, ChainResult, Pipeline
 
 app = FastAPI(title="辽宁电力滚搓交易智能体 MVP", version="0.1.0")
@@ -69,14 +69,68 @@ def _result() -> ChainResult:
 def get_state(period: int | None = None) -> dict:
     """当前工作台快照：边界/参数/意向/全链输出（可按时段裁剪）+ 数据就绪清单（M1）。"""
     r = _result()
+    d_day = PIPE.target_day()
     out = r.to_json(period=period)
-    out["boundaries"] = {b: PIPE.loaded().day_ahead[D_DAY][b].to_json()
+    out["day_info"] = PIPE.day_info()
+    out["boundaries"] = {b: PIPE.loaded().day_ahead[d_day][b].to_json()
                          for b in BOUNDARY_WHITELIST
-                         if b in PIPE.loaded().day_ahead[D_DAY]}
+                         if b in PIPE.loaded().day_ahead[d_day]}
     out["intents"] = {str(p): v for p, v in PIPE.intents().items()}
     out["revisions"] = PIPE.store.all_revisions()
     out["m1_ready"] = {"roll_source": r.m1["roll_source"], "warnings": r.m1["warnings"]}
     return out
+
+
+@app.get("/api/days")
+def get_days() -> dict:
+    """可选滚撮日清单 + 当前 D/A/历史范围（历史自动收窄至 D 日之前）。"""
+    return PIPE.day_info()
+
+
+class TargetDayBody(BaseModel):
+    date: str
+
+
+@app.post("/api/target-day")
+def set_target_day(body: TargetDayBody) -> dict:
+    """选择滚撮日（D 日）→ 新 run（修订按日隔离）→ 全链重算。"""
+    global RESULT
+    try:
+        info = PIPE.set_target_day(body.date)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    RESULT = PIPE.run_all()
+    return {"ok": True, "day_info": info, "m8": {
+        "a_day": RESULT.m8["a_day"], "a1_day": RESULT.m8["a1_day"],
+        "final_24": RESULT.m8["final_24"]}}
+
+
+@app.post("/api/data/upload")
+async def upload_data(file: UploadFile = File(...)) -> dict:
+    """上传数据表（xlsx；按 sheet 签名自动识别：日前边界表/实时边界表/省间滚撮表）。
+    校验通过 → 持久化 backend/data/uploads/ → 重建数据底账（按日期合并，后传覆盖同日）→ 全链重算。"""
+    global RESULT
+    from tempfile import NamedTemporaryFile
+    from .loaders.upload_manager import validate_upload
+    payload = await file.read()
+    if len(payload) > 50 * 1024 * 1024:
+        raise HTTPException(status_code=422, detail="文件超过 50MB 上限")
+    with NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+        tmp.write(payload)
+        tmp_path = Path(tmp.name)
+    try:
+        report = validate_upload(tmp_path)
+        if not report["ok"]:
+            raise HTTPException(status_code=422, detail={"message": "格式校验未通过", "report": report})
+        kind = report["kind"]
+        saved = PIPE.uploads.save(kind, file.filename or f"{kind}.xlsx", payload)
+        reload_info = PIPE.reload_dataset()
+        RESULT = PIPE.run_all()
+        return {"ok": True, "kind": kind, "saved": str(saved), "report": report,
+                "dataset": reload_info, "day_info": PIPE.day_info(),
+                "m8": {"a_day": RESULT.m8["a_day"], "a1_day": RESULT.m8["a1_day"]}}
+    finally:
+        tmp_path.unlink(missing_ok=True)
 
 
 @app.post("/api/recalc")

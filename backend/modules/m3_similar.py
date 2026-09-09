@@ -50,9 +50,9 @@ def _pctl(sorted_vals: list[float], q: float) -> float:
     return sorted_vals[lo] + (sorted_vals[hi] - sorted_vals[lo]) * (k - lo)
 
 
-def retrieve(data: LoadedData, params: Params, metric_fn, target: list[float | None], t: int) -> dict:
+def retrieve(data: LoadedData, params: Params, metric_fn, target: list[float | None], t: int, d_day: str = D_DAY) -> dict:
     """单点位检索：默认上一周 |Δ|≤容差；N<3 自动放宽至全部历史日并标注。"""
-    hist = [d for d in data.days if d != D_DAY]
+    hist = [d for d in data.days if d < d_day]   # 历史范围自动收窄至 D 日之前
     recent = hist[-params.m3_scope_days:]
     tgt = target[t]
     if tgt is None:
@@ -82,14 +82,14 @@ def retrieve(data: LoadedData, params: Params, metric_fn, target: list[float | N
             "distribution": dist}
 
 
-def run_m3(data: LoadedData, params: Params) -> dict:
+def run_m3(data: LoadedData, params: Params, d_day: str = D_DAY) -> dict:
     """输出双维度各 96 点样本组。"""
     a_hist = {d: a_dimension(data, d) for d in data.days}
     ne_hist = {d: new_energy(data, d) for d in data.days}
-    a_groups = [retrieve(data, params, lambda d: a_hist[d], a_hist[D_DAY], t) for t in range(96)]
-    ne_groups = [retrieve(data, params, lambda d: ne_hist[d], ne_hist[D_DAY], t) for t in range(96)]
+    a_groups = [retrieve(data, params, lambda d: a_hist[d], a_hist[d_day], t, d_day) for t in range(96)]
+    ne_groups = [retrieve(data, params, lambda d: ne_hist[d], ne_hist[d_day], t, d_day) for t in range(96)]
     return {
-        "a_series_D": a_hist[D_DAY],
+        "a_series_D": a_hist[d_day],
         "a_dimension_groups": a_groups,
         "new_energy_groups": ne_groups,
         "formula": "A(t) = 省调负荷 − 新能源出力 − 核电出力 − 水电出力 − 非市场化出力 − 地方燃煤出力",

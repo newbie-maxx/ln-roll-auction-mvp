@@ -81,14 +81,20 @@ def _pairs(a: list[float | None], b: list[float | None]) -> tuple[list[float], l
 
 
 def run_pricing(data: LoadedData, params: Params, d_space96: list[float | None],
-                d_on96: list[float], m6_tie96: list[float | None]) -> dict:
-    """四步电价预测（96 与 24 两版各自独立判定）。A/A-1 日空间用各自披露边界 + 披露日前联络线。"""
-    prices_by_day = {d: data.day_ahead[d]["日前电价"].values for d in data.days if d != D_DAY and "日前电价" in data.day_ahead[d]}
-    a1_day, a1_non_pos = find_a1_day([d for d in data.days if d in prices_by_day], prices_by_day, A_DAY)
+                d_on96: list[float], m6_tie96: list[float | None],
+                d_day: str = D_DAY, a_day: str = A_DAY) -> dict:
+    """四步电价预测（96 与 24 两版各自独立判定）。A/A-1 日空间用各自披露边界 + 披露日前联络线；
+    A 日 = D 日前最新有日前电价日（由调用方解析），A-1 回溯在 A 日之前的历史日内进行。"""
+    price_days = [d for d in data.days if d < d_day and "日前电价" in data.day_ahead[d]
+                  and any(v is not None for v in data.day_ahead[d]["日前电价"].values)]
+    if a_day not in price_days:
+        raise ValueError(f"A 日 {a_day} 不在 {d_day} 之前的日前电价数据范围内")
+    prices_by_day = {d: data.day_ahead[d]["日前电价"].values for d in price_days}
+    a1_day, a1_non_pos = find_a1_day(price_days, prices_by_day, a_day)
 
-    a_space = step1_space(thermal_input_from(data, data.day_ahead[A_DAY]["联络线"].values))
-    a1_space = step1_space(thermal_input_from(data, data.day_ahead[a1_day]["联络线"].values))
-    a_price = prices_by_day[A_DAY]
+    a_space = step1_space(thermal_input_from(data, data.day_ahead[a_day]["联络线"].values, a_day))
+    a1_space = step1_space(thermal_input_from(data, data.day_ahead[a1_day]["联络线"].values, a1_day))
+    a_price = prices_by_day[a_day]
     a1_price = prices_by_day[a1_day]
 
     # ---- 步骤一 ----
@@ -128,7 +134,7 @@ def run_pricing(data: LoadedData, params: Params, d_space96: list[float | None],
         ]
 
     return {
-        "a_day": A_DAY, "a1_day": a1_day, "a1_non_pos_points": a1_non_pos,
+        "d_day": d_day, "a_day": a_day, "a1_day": a1_day, "a1_non_pos_points": a1_non_pos,
         "critical_space_96": critical96, "critical_space_24": critical24,
         "k": k, "M1": m1, "C1": c1, "M2": m2, "C2": c2,
         "pred1_96": pred1_96, "pred2_96": pred2_96, "final_96": finalize(d_space96, critical96, use_p2_96, pred1_96, pred2_96),
@@ -157,9 +163,9 @@ def bin_prices(prices: list[float], floor: float, cap: float, width: int) -> dic
     return {"bins": bins, "n": n, "out_of_range": out_of_range}
 
 
-def landing_stats(data: LoadedData, params: Params, d_lr24: list[float | None], period: int) -> dict:
+def landing_stats(data: LoadedData, params: Params, d_lr24: list[float | None], period: int, d_day: str = D_DAY) -> dict:
     """落点区间：±阈值 检索历史日（日前口径负荷率 vs 计算负荷率）→ 实时出清价落档统计 + 期望。"""
-    hist = [d for d in data.days if d != D_DAY]
+    hist = [d for d in data.days if d < d_day]   # 历史范围自动收窄至 D 日之前
     target = d_lr24[period - 1] if 0 < period <= 24 else None
     members: list[str] = []
     if target is not None:

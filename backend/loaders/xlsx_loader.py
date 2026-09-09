@@ -2,10 +2,10 @@
 
 - CSV/XLSX/PDF loader 可替换：本类实现 XLSX；`Loader` 协议约束替换位（B 轨仅换 loader，计算零改动）。
 - 96 点入库；省间滚撮 24→96 展开（小时值复制 4 份）。
-- 三类标注（披露/推断/补齐 + 来源日）；运行日不可披露项（非市场化/水电/地方燃煤）最近日法。
-- 缺数补齐顺序：人工填数 → 相似日 → 均值/插值；有据标 `补齐(方式+依据)`，无据标 `缺输入`。
-- 核电预测 = min(最新披露运行日出力, 检修计划出力上限)；检修缺 → 未检修默认开机 + 假设标注。
-- 意向挂牌/摘牌价（24 点）与开机参数由 store 持久化，非本模块职责。
+- 三类标注（披露/推断/补齐 + 来源日）；缺数补齐：均值/插值兜底（人工填数/相似日由修订链与 M2 承担）。
+- **数据底账合并**：基线文件 + 用户上传表（backend/data/uploads/，按日期合并、后传覆盖同日）。
+- **滚撮日（D 日）动态化**：运行日政策（不可披露项最近日法/核电 min 标注）在 `apply_run_day_policy`
+  中按所选 D 日执行，装载期保持原始口径；候选日与 A 日解析见 `valid_target_days` / `resolve_a_day`。
 """
 from __future__ import annotations
 
@@ -15,12 +15,10 @@ from typing import Protocol
 
 import openpyxl
 
-from ..config import A_DAY, D_DAY, DA_SHEETS, DA_XLSX, ROLL_AUCTION_XLSX, RT_SHEETS, RT_XLSX
+from ..config import DA_SHEETS, DA_XLSX, RT_SHEETS, RT_XLSX, ROLL_AUCTION_XLSX
 from ..mock.roll_auction import synth_roll_auction_24
 
 N = 96
-# 运行日（D 日）不可披露项 → 最近日法（PRD D-5；数据中虽含 08-31 行，按运行日口径以最近披露日替代）
-UNDISCLOSED_KEYS = ("非市场化", "水电", "地方燃煤")
 
 
 @dataclass
@@ -47,12 +45,12 @@ class Series:
 
 @dataclass
 class LoadedData:
-    """全量装载结果：逐日边界 + 省间滚撮 + 实时侧。"""
-    days: list[str]                                   # 升序历史日（含 D 日）
-    day_ahead: dict[str, dict[str, Series]]           # day -> sheet -> Series(96)
+    """全量装载结果：逐日边界 + 省间滚撮 + 实时侧（原始口径，未应用运行日政策）。"""
+    days: list[str]                                   # 库内全部日期（升序）
+    day_ahead: dict[str, dict[str, Series]]           # day -> sheet -> Series
     realtime: dict[str, dict[str, Series]]            # day -> sheet -> Series
-    roll_auction: dict[str, dict[str, list[float]]]   # day -> {volume24, price24}（真实文件或合成占位）
-    roll_source: str                                  # 真实文件路径 / 合成占位说明
+    roll_auction: dict[str, dict[str, list[float]]]   # day -> {volume24, price24}
+    roll_source: str
     warnings: list[str] = field(default_factory=list)
 
 
@@ -89,8 +87,7 @@ def read_sheet(path: Path, sheet: str) -> dict[str, list[float | None]]:
 
 
 def fill_missing(values: list[float | None]) -> tuple[list[float | None], list[str], list[str | None], list[str | None]]:
-    """缺数补齐：均值/插值兜底（人工填数/相似日由修订链与 M2 承担）。
-    返回 (values, kinds, src_days, notes)；缺数点有邻可插 → 补齐(线性插值)；无邻 → 缺输入。"""
+    """缺数补齐：线性插值 → 全日均值 → 缺输入（有据标 `▣补齐(方式+依据)`，无据标"缺输入"）。"""
     n = len(values)
     out = list(values)
     kinds = ["披露" if v is not None else "" for v in values]
@@ -118,59 +115,63 @@ def fill_missing(values: list[float | None]) -> tuple[list[float | None], list[s
     return out, kinds, src_days, notes
 
 
-class XlsxLoader:
-    """A 轨实现：本地 xlsx → LoadedData（M1 全量口径）。"""
+def _merge_sheets(base: dict[str, dict[str, list[float | None]]], extra: dict[str, dict[str, list[float | None]]]) -> None:
+    """按日期合并：extra 中同 (sheet, day) 覆盖 base（后传覆盖同日）。"""
+    for sheet, by_day in extra.items():
+        for day, vals in by_day.items():
+            base.setdefault(sheet, {})[day] = vals
 
-    def __init__(self, da_path: Path = DA_XLSX, rt_path: Path = RT_XLSX, roll_path: Path | None = None) -> None:
+
+class XlsxLoader:
+    """A 轨实现：基线 xlsx + 上传表 → LoadedData（M1 原始口径）。"""
+
+    def __init__(self, da_path: Path = DA_XLSX, rt_path: Path = RT_XLSX, roll_path: Path | None = None,
+                 extra_da: tuple[Path, ...] = (), extra_rt: tuple[Path, ...] = (),
+                 extra_roll: tuple[Path, ...] = ()) -> None:
         self.da_path = da_path
         self.rt_path = rt_path
         self.roll_path = roll_path if roll_path is not None else ROLL_AUCTION_XLSX
+        self.extra_da = tuple(extra_da)
+        self.extra_rt = tuple(extra_rt)
+        self.extra_roll = tuple(extra_roll)
 
     def load(self) -> LoadedData:
         warnings: list[str] = []
-        raw_da = {s: read_sheet(self.da_path, s) for s in DA_SHEETS}
-        raw_rt = {s: read_sheet(self.rt_path, s) for s in RT_SHEETS}
+        raw_da: dict[str, dict[str, list[float | None]]] = {s: read_sheet(self.da_path, s) for s in DA_SHEETS}
+        raw_rt: dict[str, dict[str, list[float | None]]] = {s: read_sheet(self.rt_path, s) for s in RT_SHEETS}
 
-        days = sorted(raw_da["负荷"].keys())
-        if not days:
-            raise RuntimeError(f"日前边界缺负荷数据: {self.da_path}")
-        if days[-1] != D_DAY:
-            warnings.append(f"最新日 {days[-1]} ≠ 配置 D 日 {D_DAY}，按数据实际日期继续")
+        # ---- 用户上传合并（时间升序 = 后传覆盖同日）----
+        for f in self.extra_da:
+            for s in DA_SHEETS:
+                _merge_sheets(raw_da, {s: read_sheet(f, s)})
+        for f in self.extra_rt:
+            for s in RT_SHEETS:
+                _merge_sheets(raw_rt, {s: read_sheet(f, s)})
+        if self.extra_da or self.extra_rt:
+            warnings.append(f"已合并上传表：日前×{len(self.extra_da)}、实时×{len(self.extra_rt)}（按日期覆盖）")
 
-        # ---- 日前边界逐日入库（补齐 + 标注）----
+        all_days = sorted(set(raw_da.get("负荷", {}).keys()) | set(raw_rt.get("实时电价", {}).keys()))
+        if not all_days:
+            raise RuntimeError(f"数据底账为空：基线 {self.da_path} 无负荷数据且无有效上传")
+        days = all_days
+
+        # ---- 日前/实时逐日入库（补齐 + 披露标注）----
         day_ahead: dict[str, dict[str, Series]] = {}
         for day in days:
             day_ahead[day] = {}
             for sheet, by_day in raw_da.items():
                 if not by_day:
                     continue
-                n_raw = len(by_day[day]) if day in by_day else 0
-                if day not in by_day or n_raw == 0:
-                    day_ahead[day][sheet] = Series.make([None] * N, "缺输入", note="当日缺文件/缺行")
-                    continue
-                vals = (by_day[day] + [None] * N)[:N]
-                if n_raw == 24:      # 24 点原生 sheet（如 24点平均日前负荷率）保持 24 点
-                    vals = (by_day[day] + [None] * 24)[:24]
+                if day not in by_day or not by_day[day]:
+                    continue                     # 该日缺此 sheet → 不造缺输入占位（候选日判定按需检查）
+                vals_raw = by_day[day]
+                if len(vals_raw) == 24:          # 24 点原生 sheet 保持 24 点
+                    vals = (vals_raw + [None] * 24)[:24]
+                else:
+                    vals = (vals_raw + [None] * N)[:N]
                 vals, kinds, srcs, notes = fill_missing(vals)
                 day_ahead[day][sheet] = Series(vals, kinds, srcs, notes)
 
-        # ---- 运行日（D 日）不可披露项：最近日法（取 A 日披露近似替代 + 标注来源日）----
-        for key in UNDISCLOSED_KEYS:
-            if D_DAY in day_ahead and key in day_ahead[D_DAY]:
-                src = day_ahead[A_DAY][key]
-                tgt = day_ahead[D_DAY][key]
-                for i in range(min(len(tgt.values), len(src.values))):
-                    tgt.values[i] = src.values[i]
-                    tgt.annotate(i, "推断", A_DAY, f"运行日不披露，最近日法取自 {A_DAY}")
-
-        # ---- 核电预测 = min(最新披露运行日出力, 检修计划出力上限)；检修缺 → 假设标注 ----
-        nuc = day_ahead[D_DAY].get("核电")
-        if nuc is not None:
-            for i in range(N):
-                if nuc.values[i] is not None:
-                    nuc.annotate(i, "推断", D_DAY, "核电预测 = min(最新披露运行日出力, 检修上限=∞（检修计划缺，未检修默认开机）)")
-
-        # ---- 实时侧 ----
         realtime: dict[str, dict[str, Series]] = {}
         for sheet, by_day in raw_rt.items():
             if not by_day:
@@ -180,26 +181,87 @@ class XlsxLoader:
                 vals, kinds, srcs, notes = fill_missing(vals)
                 realtime.setdefault(day, {})[sheet] = Series(vals, kinds, srcs, notes)
 
-        # ---- 省间滚撮：真实文件优先（A-0 替换位），否则确定性合成占位 ----
+        # ---- 省间滚撮：真实文件/上传优先（A-0 替换位），否则确定性合成占位 ----
         roll: dict[str, dict[str, list[float]]] = {}
-        if self.roll_path.exists():
-            roll_source = f"真实文件 {self.roll_path}"
-            vol_by_day = read_sheet(self.roll_path, "成交量")
-            price_by_day = read_sheet(self.roll_path, "价格")
-            for day in days:
-                v24 = (vol_by_day.get(day, []) + [0.0] * 24)[:24]
-                p24 = (price_by_day.get(day, []) + [0.0] * 24)[:24]
-                roll[day] = {"volume24": v24, "price24": p24}
+        roll_files = [self.roll_path] if self.roll_path.exists() else []
+        roll_files += list(self.extra_roll)
+        if roll_files:
+            roll_source = "、".join(str(p) for p in roll_files)
+            for f in roll_files:
+                vol_by_day = read_sheet(f, "成交量")
+                price_by_day = read_sheet(f, "价格")
+                for day in days:
+                    v24 = (vol_by_day.get(day, []) + [0.0] * 24)[:24]
+                    p24 = (price_by_day.get(day, []) + [0.0] * 24)[:24]
+                    if day in vol_by_day:
+                        roll[day] = {"volume24": v24, "price24": p24}
         else:
-            roll_source = "确定性合成占位（省间滚撮 24 点本地暂缺，A-0 待业务方提供）"
+            roll_source = "确定性合成占位（省间滚撮 24 点本地暂缺，A-0 待业务方提供；可在数据管理上传滚撮表）"
             for day in days:
-                tie = day_ahead[day]["联络线"].values
-                v24, p24 = synth_roll_auction_24(tie)
+                tie = day_ahead.get(day, {}).get("联络线")
+                tie_vals = tie.values if tie is not None else [None] * N
+                v24, p24 = synth_roll_auction_24(tie_vals)
                 roll[day] = {"volume24": v24, "price24": p24}
             warnings.append(roll_source)
 
         return LoadedData(days=days, day_ahead=day_ahead, realtime=realtime,
                           roll_auction=roll, roll_source=roll_source, warnings=warnings)
+
+
+# ======================= 滚撮日（D 日）动态化 =======================
+
+# 运行日不可披露项 → 最近日法（PRD D-5；按所选 D 日以 A 日（最近披露日）替代）
+UNDISCLOSED_KEYS = ("非市场化", "水电", "地方燃煤")
+
+
+def valid_target_days(data: LoadedData) -> list[str]:
+    """可选滚撮日 = 库内 8 项边界齐全（非全缺）的日期（升序）。"""
+    required = ("负荷", "水电", "核电", "地方燃煤", "风电", "光伏", "联络线", "非市场化")
+    out = []
+    for day in data.days:
+        da = data.day_ahead.get(day, {})
+        ok = True
+        for k in required:
+            s = da.get(k)
+            if s is None or not any(v is not None for v in s.values):
+                ok = False
+                break
+        if ok:
+            out.append(day)
+    return out
+
+
+def resolve_a_day(data: LoadedData, d_day: str) -> str:
+    """A 日 = D 日之前、库内有日前电价的最新日（"数据库中该日之前的最新数据"）。"""
+    candidates = [d for d in data.days
+                  if d < d_day and any(v is not None for v in data.day_ahead.get(d, {}).get("日前电价", Series([])).values)]
+    if not candidates:
+        raise ValueError(f"{d_day} 之前库内无日前电价日，无法拟合（A 日缺失）")
+    return max(candidates)
+
+
+def apply_run_day_policy(data: LoadedData, d_day: str, a_day: str) -> list[str]:
+    """运行日政策（在所选 D 日副本上执行；返回 warnings）：
+    1) 不可披露项（非市场化/水电/地方燃煤）最近日法 → 取 A 日披露 + 标注来源日；
+    2) 核电预测 = min(最新披露运行日出力, 检修上限=∞（检修计划缺，未检修默认开机））→ 标注。"""
+    warnings: list[str] = []
+    da_d = data.day_ahead.get(d_day, {})
+    da_a = data.day_ahead.get(a_day, {})
+    for key in UNDISCLOSED_KEYS:
+        tgt, src = da_d.get(key), da_a.get(key)
+        if tgt is None or src is None:
+            warnings.append(f"{d_day} 缺边界「{key}」或 {a_day} 缺披露源，最近日法未应用")
+            continue
+        for i in range(min(len(tgt.values), len(src.values))):
+            if src.values[i] is not None:
+                tgt.values[i] = src.values[i]
+                tgt.annotate(i, "推断", a_day, f"运行日不披露，最近日法取自 {a_day}")
+    nuc = da_d.get("核电")
+    if nuc is not None:
+        for i in range(len(nuc.values)):
+            if nuc.values[i] is not None:
+                nuc.annotate(i, "推断", d_day, "核电预测 = min(最新披露运行日出力, 检修上限=∞（检修缺，未检修默认开机）)")
+    return warnings
 
 
 def expand24to96(v24: list[float | None]) -> list[float | None]:
