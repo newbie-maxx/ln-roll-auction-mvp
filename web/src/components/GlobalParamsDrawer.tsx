@@ -1,5 +1,5 @@
 /** 全局参数抽屉：全参数表单（校验）+ 改动留痕列表；改动即时全链重算（理由 ≥5 字） */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useWorkbench } from '../store'
 import type { Params } from '../calc/params'
 
@@ -26,10 +26,17 @@ export function GlobalParamsDrawer({ open, onClose }: { open: boolean; onClose: 
   const paramLog = useWorkbench((s) => s.paramLog)
   const setParams = useWorkbench((s) => s.setParams)
 
-  const [draft, setDraft] = useState<Record<string, string>>(() => ({
+  const makeDraft = (): Record<string, string> => ({
     ...Object.fromEntries(Object.entries(params).map(([k, v]) => [k, typeof v === 'number' ? String(v) : ''])),
     开机常量: String(unitOn),
-  }))
+  })
+  const [draft, setDraft] = useState<Record<string, string>>(makeDraft)
+
+  // 每次打开抽屉重同步当前生效参数（live 模式下来自后端 /api/state，可能已非默认值）
+  useEffect(() => {
+    if (open) setDraft(makeDraft())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, params, unitOn])
   const [reason, setReason] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState<string | null>(null)
