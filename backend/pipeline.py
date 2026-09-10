@@ -277,17 +277,17 @@ class Pipeline:
         m6 = m6_tieline.run_m6(data, params, m4, m5)
         t = lap("m6", t)
 
-        # 实时联络线预测(96) = 联络线基线(96 生效值) − 交易员预测省间交易总量(96 生效值)
-        # （省间交易总量为 24 点输入按小时展开 96 点，功率值不除以 4）
+        # 实时联络线预测(96) = 联络线基线(96 生效值) + 交易员预测省间交易总量(96 生效值)
+        # （符号口径 2026-09-10 锁定：正=买入/受入、负=卖出/送出；24 点输入按小时展开 96 点，功率值不除以 4）
         tie_base = da.get("联络线")
         inter_total = da.get("省间交易总量")
         realtime_tie: list[float | None] = []
         for i in range(96):
             b = tie_base.values[i] if tie_base is not None else None
             v = inter_total.values[i] if inter_total is not None else None
-            realtime_tie.append(b - v if b is not None and v is not None else None)   # type: ignore[operator]
+            realtime_tie.append(b + v if b is not None and v is not None else None)   # type: ignore[operator]
         m6["realtime_tie_96"] = realtime_tie
-        m6["realtime_formula"] = "实时联络线预测 = 联络线基线 − 交易员预测省间交易总量（省间滚搓+省间现货）"
+        m6["realtime_formula"] = "实时联络线预测 = 联络线基线 + 交易员预测省间交易总量（正=买入/受入，负=卖出/送出）"
         t = lap("realtime_tie", t)
 
         # M7：系统推演（默认）+ 人工自填并列（互不覆盖）——运行日空间用【实时联络线预测】

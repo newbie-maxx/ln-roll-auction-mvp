@@ -126,8 +126,9 @@ def test_m4_baseline_formula():
     }, roll=roll)
     b1 = day_baseline(data, "2026-08-01")
     b2 = day_baseline(data, "2026-08-02")
-    assert b1 is not None and b1[0] == 5010 and b1[4] == 5010
-    assert b2 is not None and b2[95] == 7020
+    # 符号口径（2026-09-10）：基线 = 日前联络线 − 滚撮量（正滚撮=买入 抬低基线）
+    assert b1 is not None and b1[0] == 4990 and b1[4] == 4990
+    assert b2 is not None and b2[95] == 6980
     # 缺联络线日 → None 不参与均值
     empty = synth_loaded({D_DAY: {}}, roll={D_DAY: {"volume24": [1.0] * 24, "price24": [1.0] * 24}})
     assert day_baseline(empty, D_DAY) is None

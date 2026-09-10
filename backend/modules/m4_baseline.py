@@ -1,4 +1,5 @@
-"""M4 联络线基线（PRD §6.2 M4）：各历史日基线(96) = 省间滚撮量(24→96 展开) + 日前联络线(96)；
+"""M4 联络线基线（符号口径 2026-09-10 锁定：滚撮正=买入/受入、负=卖出/送出）：
+各历史日基线(96) = 日前联络线(96) − 省间滚撮量(24→96 展开)；
 缺数日标"缺"不参与均值。基线均值按 M3 A 维度样本组成员逐点取（样本组空 → 该点退化为全历史均值并标注）。"""
 from __future__ import annotations
 
@@ -16,7 +17,7 @@ def day_baseline(data: LoadedData, day: str) -> list[float | None] | None:
     out: list[float | None] = []
     for t in range(96):
         r, v = roll96[t], tie.values[t]
-        out.append(r + v if r is not None and v is not None else None)   # type: ignore[operator]
+        out.append(v - r if r is not None and v is not None else None)   # 基线 = 日前联络线 − 滚撮量
     return out if all(v is not None for v in out) else None
 
 
@@ -50,6 +51,6 @@ def run_m4(data: LoadedData, params: Params, m3_result: dict, d_day: str = D_DAY
         "mean_96": mean_96,
         "mean_sources_96": mean_sources,
         "mean_24": avg96to24(mean_96),
-        "formula": "各日基线(96) = 滚撮量(24→96 展开) + 日前联络线；均值按 M3 A 维度样本组成员逐点取",
+        "formula": "各日基线(96) = 日前联络线 − 滚撮量(24→96 展开)；均值按 M3 A 维度样本组成员逐点取",
         "relaxed_any": any(g["relaxed"] for g in m3_result["a_dimension_groups"]),
     }

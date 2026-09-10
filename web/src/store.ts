@@ -105,7 +105,7 @@ function recalcDerived(params: Params, unitOn: number, revisions: Revision[], in
   }
   const realtimeTie96 = dEffective.联络线.map((v, i) => {
     const tot = dEffective.省间交易总量[i]
-    return v !== null && tot !== null ? v - tot : null
+    return v !== null && tot !== null ? v + tot : null    // 实时 = 基线 + 总量（正=买入/受入）
   })
   const spaceInputs = { ...dEffective, 联络线: realtimeTie96 } as unknown as SpaceInputs   // 空间的联络线项 = 实时联络线预测
   const space96 = biddingSpace(spaceInputs)
