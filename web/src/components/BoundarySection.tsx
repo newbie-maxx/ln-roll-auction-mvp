@@ -73,6 +73,7 @@ export function BoundarySection() {
   const [editAnchor, setEditAnchor] = useState<{ left: number; top: number } | null>(null)
   const revisions = useWorkbench((s) => s.revisions)
   const derived = useWorkbench((s) => s.derived)
+  const mode = useWorkbench((s) => s.mode)
   const selectedPeriod = useWorkbench((s) => s.selectedPeriod)
 
   const isBoundary = (BOUNDARY_KEYS as readonly string[]).includes(tab)
@@ -96,8 +97,8 @@ export function BoundarySection() {
   const base = useMemo(() => {
     if (isBoundary) return originalBoundary(tab as BoundaryKey)
     if (isRealtimeTie) return realtimeTie
-    return Array.from({ length: 96 }, () => derived.unitOn)
-  }, [tab, isBoundary, isRealtimeTie, derived.unitOn, realtimeTie])
+    return derived.on96                       // 火电开机：live=11 步推演（上/下半日恒值）；demo=常量
+  }, [tab, isBoundary, isRealtimeTie, derived.on96, realtimeTie])
   const effective = useMemo(
     () => (isBoundary ? effectiveSeries(tab as BoundaryKey, base, revisions) : base),
     [tab, isBoundary, base, revisions],
@@ -160,7 +161,9 @@ export function BoundarySection() {
 
       {tab === '火电开机' && (
         <div className="border-b border-[#334155] bg-[#1A1E2F]/40 px-3 py-1.5 text-[10px] text-[#F59E0B]">
-          demo 简化：开机 = 全天常量参数（{derived.unitOn.toFixed(1)} MW，默认 08-31 日前开机均值）；11 步推演由 Python 后端完整实现，可在「全局参数」中修改常量值
+          {mode === 'live'
+            ? `开机由 11 步推演产出（正/负备用校验 + 上/下半日各取段内最大）：上半日 ${derived.on96[0]?.toFixed(1)} MW｜下半日 ${derived.on96[95]?.toFixed(1)} MW；只读，改「全局参数」中调频/备用/受阻/平衡系数/零价点负荷率/最小开机/装机−检修即可重算`
+            : `demo 简化：开机 = 全天常量（${derived.unitOn.toFixed(1)} MW，默认 08-31 日前开机均值）；启动后端进入实时计算模式即为 11 步推演`}
         </div>
       )}
 

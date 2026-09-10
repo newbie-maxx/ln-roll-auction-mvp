@@ -130,7 +130,11 @@ function LoadRateSection() {
       <div className="flex items-center gap-2 border-b border-[#334155] px-3 py-2 text-xs">
         <span className="font-semibold text-[#94A3B8]">全省火电负荷率（派生值 · 不算边界 · 只读）</span>
         <span className="rounded bg-[#F59E0B]/15 px-1.5 py-0.5 text-[10px] font-semibold text-[#F59E0B]">测算·虚线</span>
-        <span className="ml-auto text-[10px] text-[#94A3B8]">开机常量 {fmt(derived.unitOn, 1)} MW（demo 简化，非 11 步推演）</span>
+        <span className="ml-auto text-[10px] text-[#94A3B8]">
+          {useWorkbench.getState().mode === 'live'
+            ? `开机：11 步推演（上半日 ${fmt(derived.on96[0], 1)} / 下半日 ${fmt(derived.on96[95], 1)} MW）`
+            : `demo 简化：开机常量 ${fmt(derived.unitOn, 1)} MW（实时计算模式下为 11 步推演）`}
+        </span>
       </div>
       <div className="grid grid-cols-2 gap-2 p-2">
         <div><LineChart spec={spec96} /></div>

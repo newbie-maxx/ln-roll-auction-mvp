@@ -39,6 +39,7 @@ export interface ParamChange { time: string; changes: string; reason: string }
 
 export interface DerivedOutputs {
   unitOn: number
+  on96: Series96                 // 开机序列：live=11 步推演（上/下半日恒值）；demo=常量简化
   space96: Series96
   realtimeTie96: Series96      // 实时联络线预测 = 联络线基线 − 省间交易总量
   lr96: Series96
@@ -154,7 +155,8 @@ function recalcDerived(params: Params, unitOn: number, revisions: Revision[], in
       params.区间宽度,
     ))
   }
-  return { unitOn, space96, realtimeTie96, lr96, lr24, pricing, landing, grey, a1Day, a1NonPos: nonPosPoints }
+  return { unitOn, on96: Array.from({ length: 96 }, () => unitOn), space96, realtimeTie96, lr96, lr24,
+           pricing, landing, grey, a1Day, a1NonPos: nonPosPoints }
 }
 
 const defaultIntents: Record<number, IntentEntry> = Object.fromEntries(
@@ -183,6 +185,7 @@ function mapBackend(st: BackendState): { derived: DerivedOutputs; params: Params
   const p8 = st.m8
   const derived: DerivedOutputs = {
     unitOn: st.m7.final_on_96?.[0] ?? initialUnitOn,
+    on96: st.m7.final_on_96 ?? Array.from({ length: 96 }, () => initialUnitOn),
     space96: st.m7.space_96,
     realtimeTie96: st.m6.realtime_tie_96 ?? [],
     lr96: st.m7.load_rate_96,

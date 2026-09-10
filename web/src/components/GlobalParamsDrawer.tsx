@@ -23,6 +23,8 @@ const NUM_FIELDS: { key: keyof Params | '开机常量'; label: string; step?: st
 export function GlobalParamsDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const params = useWorkbench((s) => s.params)
   const apiBusy = useWorkbench((s) => s.apiBusy)
+  const mode = useWorkbench((s) => s.mode)
+  const derived = useWorkbench((s) => s.derived)
   const unitOn = useWorkbench((s) => s.unitOn)
   const paramLog = useWorkbench((s) => s.paramLog)
   const setParams = useWorkbench((s) => s.setParams)
@@ -68,8 +70,19 @@ export function GlobalParamsDrawer({ open, onClose }: { open: boolean; onClose: 
           <button onClick={onClose} className="cursor-pointer text-xs text-[#94A3B8] hover:text-[#F8FAFC]">关闭 ✕</button>
         </div>
 
+        {mode === 'live' && (
+          <div className="mb-3 rounded border border-[#22C55E]/40 bg-[#22C55E]/5 p-2 text-[11px]">
+            <div className="font-semibold text-[#22C55E]">开机 = 11 步推演产出（非人工常量）</div>
+            <div className="mt-1 text-[#94A3B8]">
+              当前推演结果：上半日 <span className="mono text-[#F8FAFC]">{derived.on96[0]?.toFixed(1)}</span> MW｜下半日
+              <span className="mono text-[#F8FAFC]">{derived.on96[95]?.toFixed(1)}</span> MW。
+              由右侧参数驱动（调频/正备用/负备用/受阻系数/新能源平衡系数/零价点负荷率/最小开机方式/装机−检修），修改参数保存即重算开机与全链。
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-2">
-          {NUM_FIELDS.map((f) => (
+          {NUM_FIELDS.filter((f) => mode === 'demo' || f.key !== '开机常量').map((f) => (
             <label key={f.key} className="block">
               <span className="mb-0.5 block text-[10px] text-[#94A3B8]">{f.label}</span>
               <input
