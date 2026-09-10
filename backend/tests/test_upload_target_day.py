@@ -167,3 +167,21 @@ def test_pipeline_uses_real_roll(pipe):
     assert b is not None
     # 96 点第 9 点（0 基 8）= 小时 2（0 基）展开 → 真实滚撮 + 日前联络线
     assert b[8] == round(data.roll_auction["2026-08-01"]["volume24"][2] + data.day_ahead["2026-08-01"]["联络线"].values[8], 6)  # noqa: E501
+
+
+# ---------- 实时联络线预测（2026-09-10 口径） ----------
+
+def test_realtime_tie_and_space_uses_it(pipe):
+    """实时联络线预测 = 联络线基线 − 省间交易总量（默认 0 → 等于基线）；改省间总量 → 实时线与空间联动。"""
+    r0 = pipe.run_all()
+    base_tie = pipe.loaded().day_ahead[pipe.target_day()]["联络线"].values
+    # 默认省间总量全 0 → 实时联络线预测 = 基线
+    assert r0.m6["realtime_tie_96"][10] == pytest.approx(base_tie[10])
+    # 交易员预测省间总量（24 点语义：改 t=37 即整小时 4 点）
+    pipe.modify_boundary("省间交易总量", 10, [{"t": 37, "value": 800.0}], "午间省间外送增加")
+    r1 = pipe.run_all()
+    for i in range(36, 40):
+        assert r1.m6["realtime_tie_96"][i] == pytest.approx(base_tie[i] - 800.0)   # 小时 4 点联动
+    # 运行日空间用实时联络线预测：联络线项 −800 → 空间 +800（该小时 4 点）
+    for i in range(36, 40):
+        assert r1.m7["space_96"][i] == pytest.approx(r0.m7["space_96"][i] + 800.0)

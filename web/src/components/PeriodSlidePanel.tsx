@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react'
 import { LineChart } from './LineChart'
 import { TIME_LABELS_96, PERIOD_LABELS_24 } from './BoundarySection'
 import { latestRevisionAt, originalBoundary, useWorkbench } from '../store'
-import { BOUNDARY_KEYS, type BoundaryKey } from '../calc/types'
+import { BOUNDARY_KEYS, BOUNDARY_LABELS, HOUR_EXPAND_KEYS, type BoundaryKey } from '../calc/types'
 
 const fmt = (v: number | null | undefined, d = 1) => (v === null || v === undefined ? '—' : v.toFixed(d))
 
@@ -85,6 +85,9 @@ export function PeriodSlidePanel({ period, onClose }: { period: number; onClose:
         <section className="rounded-lg border border-[#334155] bg-[#020617] p-2">
           <div className="mb-2 flex flex-wrap items-center gap-1">
             <span className="mr-1 text-[11px] font-semibold text-[#94A3B8]">可改边界（全天 96 点）</span>
+            {HOUR_EXPAND_KEYS.includes(boundary) && (
+              <span className="rounded bg-[#22C55E]/15 px-1.5 py-0.5 text-[10px] text-[#22C55E]">24 点输入：编辑该小时任一点即 4 点同值（功率值不除以 4）</span>
+            )}
             {BOUNDARY_KEYS.map((k) => (
               <button
                 key={k}
@@ -93,7 +96,7 @@ export function PeriodSlidePanel({ period, onClose }: { period: number; onClose:
                   boundary === k ? 'bg-[#3B82F6] font-semibold text-white' : 'text-[#94A3B8] hover:bg-[#1A1E2F] hover:text-[#F8FAFC]'
                 }`}
               >
-                {k}
+                {BOUNDARY_LABELS[k] ?? k}
               </button>
             ))}
           </div>

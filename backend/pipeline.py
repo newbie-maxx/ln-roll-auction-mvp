@@ -22,8 +22,22 @@ from .modules import (m2_distributed, m3_similar, m4_baseline, m5_interprovincia
                       m7_thermal, m8_pricing)
 from .store import Store
 
-# 可改边界白名单（docu/智能体工具与技能设计.md §5；火电开机走 M7 双模式不在此列）
-BOUNDARY_WHITELIST = ("负荷", "风电", "光伏", "水电", "核电", "地方燃煤", "非市场化", "联络线")
+# 可改边界白名单（docu/智能体工具与技能设计.md §5；火电开机走 M7 双模式不在此列）。
+# 联络线 = 联络线基线（显示名）；省间交易总量 = 交易员预测（省间滚搓+省间现货），24 点输入
+# 自动展开 96 点（功率值，不除以 4），默认全 0 待交易员更新。
+BOUNDARY_WHITELIST = ("负荷", "风电", "光伏", "水电", "核电", "地方燃煤", "非市场化", "联络线", "省间交易总量")
+BOUNDARY_LABELS = {"联络线": "联络线基线"}
+HOUR_EXPAND_KEYS = ("省间交易总量",)   # 该边界按小时语义编辑：改 1 点即整小时 4 点同值
+
+
+def _inject_inter_total_default(data) -> None:
+    """省间交易总量（交易员预测）：库内每日默认 0（96 点 = 24 点 0 展开），待交易员更新。"""
+    from .loaders.xlsx_loader import Series
+    for day in data.days:
+        da = data.day_ahead.setdefault(day, {})
+        if "省间交易总量" not in da:
+            da["省间交易总量"] = Series.make([0.0] * 96, kind="意向",
+                                           note="默认 0（24 点输入自动展开 96 点，功率值不除以 4），待交易员更新")
 
 
 @dataclass
@@ -51,7 +65,9 @@ class ChainResult:
             "params": self.params.as_dict(),
             "run_id": self.run_id,
             "m1": {"roll_source": self.m1["roll_source"], "warnings": self.m1["warnings"]},
-            "m6": {"predicted_96": self.m6["predicted_96"], "kind": self.m6["kind"]},
+            "m6": {"predicted_96": self.m6["predicted_96"], "kind": self.m6["kind"],
+                   "realtime_tie_96": self.m6.get("realtime_tie_96"),
+                   "realtime_formula": self.m6.get("realtime_formula")},
             "m7": {
                 "mode": self.m7["mode"], "final_on_96": self.m7["final_on_96"],
                 "space_96": self.m7["space_96"],
@@ -103,6 +119,7 @@ class Pipeline:
         """装载一次（含上传合并）；原值入 boundary_master（按 run 键控，只写原值）。"""
         if self._pristine is None:
             self._pristine = self._loader().load()
+            _inject_inter_total_default(self._pristine)
             self._ensure_run()
             da = self._pristine.day_ahead[self.target_day()]
             for boundary in BOUNDARY_WHITELIST:
@@ -260,8 +277,21 @@ class Pipeline:
         m6 = m6_tieline.run_m6(data, params, m4, m5)
         t = lap("m6", t)
 
-        # M7：系统推演（默认）+ 人工自填并列（互不覆盖）
-        thermal_in = m7_thermal.thermal_input_from(data, m6["predicted_96"], d_day)
+        # 实时联络线预测(96) = 联络线基线(96 生效值) − 交易员预测省间交易总量(96 生效值)
+        # （省间交易总量为 24 点输入按小时展开 96 点，功率值不除以 4）
+        tie_base = da.get("联络线")
+        inter_total = da.get("省间交易总量")
+        realtime_tie: list[float | None] = []
+        for i in range(96):
+            b = tie_base.values[i] if tie_base is not None else None
+            v = inter_total.values[i] if inter_total is not None else None
+            realtime_tie.append(b - v if b is not None and v is not None else None)   # type: ignore[operator]
+        m6["realtime_tie_96"] = realtime_tie
+        m6["realtime_formula"] = "实时联络线预测 = 联络线基线 − 交易员预测省间交易总量（省间滚搓+省间现货）"
+        t = lap("realtime_tie", t)
+
+        # M7：系统推演（默认）+ 人工自填并列（互不覆盖）——运行日空间用【实时联络线预测】
+        thermal_in = m7_thermal.thermal_input_from(data, realtime_tie, d_day)
         m7 = m7_thermal.system_mode(thermal_in, params)
         if self._m7_manual_on is not None:
             m7["manual"] = m7_thermal.manual_mode(self._m7_manual_on, m7["space_96"])
@@ -301,11 +331,18 @@ class Pipeline:
             raise ValueError("period 须 ∈ 1..24")
         if len(reason.strip()) < 5:
             raise ValueError("修改理由须 ≥5 字")
-        rev_ids = []
+        expanded: list[dict] = []
         for pt in points:
             t, value = int(pt["t"]), float(pt["value"])
             if not 1 <= t <= 96 or value != value or value in (float("inf"), float("-inf")):
                 raise ValueError(f"非法点位 t={t} value={pt.get('value')}")
-            rev_ids.append(self.store.append_revision(self.target_day(), boundary, t, value, reason,
+            if boundary in HOUR_EXPAND_KEYS:
+                hour_start = ((t - 1) // 4) * 4 + 1        # 24 点输入语义：整小时 4 点同值
+                expanded.extend({"t": tt, "value": value} for tt in range(hour_start, hour_start + 4))
+            else:
+                expanded.append({"t": t, "value": value})
+        rev_ids = []
+        for pt in expanded:
+            rev_ids.append(self.store.append_revision(self.target_day(), boundary, pt["t"], pt["value"], reason,
                                                       run_id=self._run_id or "", period=period))
         return rev_ids

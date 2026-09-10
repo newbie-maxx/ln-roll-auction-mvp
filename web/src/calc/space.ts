@@ -8,11 +8,12 @@ export interface SpaceInputs {
   地方燃煤: Series96
   风电: Series96
   光伏: Series96
-  联络线: Series96
+  联络线: Series96          // 联络线基线
   非市场化: Series96
+  省间交易总量?: Series96   // 交易员预测（24 点展开 96 点；缺省 = 0）
 }
 
-/** 96 点火电竞价空间；任一项缺 → 该点 null（"缺输入"） */
+/** 96 点火电竞价空间（联络线项 = 实时联络线预测 = 基线 − 省间交易总量）；任一项缺 → 该点 null（"缺输入"） */
 export function biddingSpace(b: SpaceInputs): Series96 {
   const subs = [b.水电, b.核电, b.地方燃煤, b.风电, b.光伏, b.联络线, b.非市场化]
   const out: Series96 = new Array(96).fill(null)
@@ -25,6 +26,11 @@ export function biddingSpace(b: SpaceInputs): Series96 {
       const v = p[t]
       if (v === null || v === undefined || !Number.isFinite(v)) { ok = false; break }
       s -= v
+    }
+    if (ok && b.省间交易总量) {
+      const v = b.省间交易总量[t]
+      if (v === null || v === undefined || !Number.isFinite(v)) { ok = false }
+      else s -= v
     }
     out[t] = ok ? s : null
   }

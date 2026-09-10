@@ -46,6 +46,7 @@ export interface BackendState {
   dates: { D: string; A?: string; A1?: string }
   params: Record<string, unknown>
   run_id: string
+  m6: { predicted_96?: (number | null)[]; realtime_tie_96?: (number | null)[]; realtime_formula?: string }
   m7: { mode: string; final_on_96: number[]; space_96: (number | null)[]; load_rate_96: (number | null)[]; load_rate_24: (number | null)[] }
   m8: {
     a_day: string; a1_day: string; a1_non_pos_points: number

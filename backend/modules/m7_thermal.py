@@ -1,6 +1,7 @@
 """M7 火电开机 11 步推演与负荷率（PRD §6b，一步一函数、注释逐条对应 §6b.2）。
 
 火电竞价空间(t) = 负荷 − 水电 − 核电 − 地方燃煤 − 风电 − 光伏 − 联络线 − 非市场化出力
+（运行日"联络线"项 = 实时联络线预测 = 联络线基线 − 交易员预测省间交易总量，2026-09-10 口径）
 双模式（§6b.3）：系统计算（11 步）/ 人工自填（96 点或上/下半日恒值），两版并列留痕互不覆盖。
 """
 from __future__ import annotations
@@ -189,7 +190,7 @@ def manual_mode(on_96: list[float], space: list[float | None]) -> dict:
 
 
 def thermal_input_from(data: LoadedData, tieline_96: list[float | None], d_day: str = D_DAY) -> ThermalInput:
-    """从装载结果组装所选滚撮日的 M7 输入（联络线 = M6 预测联络线）。"""
+    """从装载结果组装所选滚撮日的 M7 输入（联络线 = 实时联络线预测：基线 − 交易员省间交易总量）。"""
     da = data.day_ahead[d_day]
     return ThermalInput(
         load=da["负荷"].values, hydro=da["水电"].values, nuclear=da["核电"].values,

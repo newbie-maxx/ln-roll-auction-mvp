@@ -9,7 +9,7 @@ import { biddingSpace, to24, type SpaceInputs } from './calc/space'
 import { defaultUnitOn, loadRate96 } from './calc/loadRate'
 import { findA1Day, runPricing, type PricingOutput } from './calc/pricing'
 import { greyEvaluate, landingStats, similarDays, type GreyResult, type LandingStats } from './calc/probability'
-import { BOUNDARY_KEYS, type BoundaryKey, type Series24, type Series96 } from './calc/types'
+import { BOUNDARY_KEYS, HOUR_EXPAND_KEYS, type BoundaryKey, type Series24, type Series96 } from './calc/types'
 import { api, type BackendState, type DayInfo } from './api/client'
 
 export interface MockPayload {
@@ -40,6 +40,7 @@ export interface ParamChange { time: string; changes: string; reason: string }
 export interface DerivedOutputs {
   unitOn: number
   space96: Series96
+  realtimeTie96: Series96      // 实时联络线预测 = 联络线基线 − 省间交易总量
   lr96: Series96
   lr24: Series24
   pricing: PricingOutput
@@ -84,6 +85,10 @@ const HISTORY_DAYS = DATA.days.filter((d) => d !== D_DAY)
 
 function boundarySeries(day: string, key: string): Series96 {
   const raw = DATA.dayAhead[key]?.[day]
+  if (key === '省间交易总量') {
+    // 交易员预测边界：默认 24 点全 0 展开 96 点（mock 中无此 sheet）
+    return (raw ?? new Array(96).fill(0)).map((v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0))
+  }
   return (raw ?? new Array(96).fill(null)).map((v) => (typeof v === 'number' && Number.isFinite(v) ? v : null))
 }
 
@@ -98,7 +103,12 @@ function recalcDerived(params: Params, unitOn: number, revisions: Revision[], in
   for (const rev of revisions) {
     if (!rev.rolledBack) dEffective[rev.boundary][rev.t - 1] = rev.newValue
   }
-  const space96 = biddingSpace(dEffective as SpaceInputs)
+  const realtimeTie96 = dEffective.联络线.map((v, i) => {
+    const tot = dEffective.省间交易总量[i]
+    return v !== null && tot !== null ? v - tot : null
+  })
+  const spaceInputs = { ...dEffective, 联络线: realtimeTie96 } as unknown as SpaceInputs   // 空间的联络线项 = 实时联络线预测
+  const space96 = biddingSpace(spaceInputs)
   const lr96 = loadRate96(space96, unitOn)
   const lr24 = to24(lr96)
 
@@ -144,7 +154,7 @@ function recalcDerived(params: Params, unitOn: number, revisions: Revision[], in
       params.区间宽度,
     ))
   }
-  return { unitOn, space96, lr96, lr24, pricing, landing, grey, a1Day, a1NonPos: nonPosPoints }
+  return { unitOn, space96, realtimeTie96, lr96, lr24, pricing, landing, grey, a1Day, a1NonPos: nonPosPoints }
 }
 
 const defaultIntents: Record<number, IntentEntry> = Object.fromEntries(
@@ -174,6 +184,7 @@ function mapBackend(st: BackendState): { derived: DerivedOutputs; params: Params
   const derived: DerivedOutputs = {
     unitOn: st.m7.final_on_96?.[0] ?? initialUnitOn,
     space96: st.m7.space_96,
+    realtimeTie96: st.m6.realtime_tie_96 ?? [],
     lr96: st.m7.load_rate_96,
     lr24: st.m7.load_rate_24,
     pricing: {
@@ -354,7 +365,13 @@ export const useWorkbench = create<WorkbenchState>((set, get) => {
       if (!BOUNDARY_KEYS.includes(boundary)) return `非法边界 ${boundary}`
       const base = boundarySeries(D_DAY, boundary)
       const now = new Date()
-      const newRevs: Revision[] = points.map((pt, i) => {
+      const expanded = HOUR_EXPAND_KEYS.includes(boundary)
+        ? points.flatMap((pt) => {
+            const hourStart = Math.floor((pt.t - 1) / 4) * 4 + 1   // 24 点输入语义：整小时 4 点同值
+            return [0, 1, 2, 3].map((j) => ({ t: hourStart + j, value: pt.value }))
+          })
+        : points
+      const newRevs: Revision[] = expanded.map((pt, i) => {
         if (pt.t < 1 || pt.t > 96 || !Number.isFinite(pt.value)) throw new Error(`非法点位 t=${pt.t}`)
         return {
           id: `R${now.getTime().toString(36)}-${period}-${boundary}-${pt.t}-${i}`,

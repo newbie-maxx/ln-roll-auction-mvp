@@ -2,11 +2,11 @@
 import { useMemo, useState } from 'react'
 
 import { LineChart } from './LineChart'
-import { BOUNDARY_KEYS, type BoundaryKey, type Series96 } from '../calc/types'
+import { BOUNDARY_KEYS, BOUNDARY_LABELS, type BoundaryKey, type Series96 } from '../calc/types'
 import { latestRevisionAt, originalBoundary, useWorkbench } from '../store'
 
 const TAB_LABELS: { key: string; label: string; derived?: boolean }[] = [
-  ...BOUNDARY_KEYS.map((k) => ({ key: k, label: k })),
+  ...BOUNDARY_KEYS.map((k) => ({ key: k, label: BOUNDARY_LABELS[k] ?? k })),
   { key: '火电开机', label: '火电开机', derived: true },
 ]
 
@@ -119,6 +119,12 @@ export function BoundarySection() {
           </button>
         ))}
       </div>
+
+      {tab === '省间交易总量' && (
+        <div className="border-b border-[#334155] bg-[#1A1E2F]/40 px-3 py-1.5 text-[10px] text-[#22C55E]">
+          交易员预测（省间滚搓 + 省间现货）：24 点输入，默认全 0 待更新——编辑任一点即整小时 4 点同值；计算时自动展开 96 点（功率值，不除以 4）
+        </div>
+      )}
 
       {tab === '火电开机' && (
         <div className="border-b border-[#334155] bg-[#1A1E2F]/40 px-3 py-1.5 text-[10px] text-[#F59E0B]">

@@ -72,9 +72,11 @@ def get_state(period: int | None = None) -> dict:
     d_day = PIPE.target_day()
     out = r.to_json(period=period)
     out["day_info"] = PIPE.day_info()
+    from .pipeline import BOUNDARY_LABELS
     out["boundaries"] = {b: PIPE.loaded().day_ahead[d_day][b].to_json()
                          for b in BOUNDARY_WHITELIST
                          if b in PIPE.loaded().day_ahead[d_day]}
+    out["boundary_labels"] = dict(BOUNDARY_LABELS)
     out["intents"] = {str(p): v for p, v in PIPE.intents().items()}
     out["revisions"] = PIPE.store.all_revisions()
     out["m1_ready"] = {"roll_source": r.m1["roll_source"], "warnings": r.m1["warnings"]}
