@@ -295,3 +295,32 @@ def test_revision_append_only_and_rollback(tmp_path):
     with pytest.raises(ValueError):
         store.append_revision(D_DAY, "负荷", 1, 1.0, "短")
     store.close()
+
+
+# ---------- M7 步骤⑥⑦⑨ 修正口径（业务方 2026-09-10 更正） ----------
+
+def test_m7_step6_no_blocked_coeff_subtraction():
+    """⑥ 剩余正备用 = 暂定开机 × (1−受阻) − 空间（不再减受阻系数）。"""
+    from backend.modules.m7_thermal import step6_pos_reserve_surplus
+    params = Params(受阻系数=0.10, 正备用=3000.0)
+    x = ThermalInput(load=flat(40000), hydro=flat(5000), nuclear=flat(3000), coal=flat(800),
+                     wind=flat(2000), solar=flat(800), tieline=flat(6000), non_market=flat(1200))
+    space = step1_space(x)                     # 全天恒 40000−18800 = 21200
+    tentative = 25000.0
+    surplus = step6_pos_reserve_surplus(tentative, space, params)
+    expect = 25000 * 0.9 - 21200 - 3000        # 22500 − 21200 − 3000 = −1700
+    assert surplus[0] == pytest.approx(expect)
+    # 旧口径（多减受阻系数 0.1）会得到 −1700.1；修正后无该尾差
+    assert surplus[0] == pytest.approx(-1700.0)
+
+
+def test_m7_step7_step9_divide_not_multiply():
+    """⑦⑨ 增/减机 = |盈余| ÷ (1−受阻)（原 × 为笔误）。"""
+    from backend.modules.m7_thermal import step7_pos_add, step9_neg_cut
+    params = Params(受阻系数=0.10)
+    surplus = [-2500.0, 500.0, None] * 32       # 负盈余 / 正常 / 缺
+    add = step7_pos_add(surplus, params)
+    cut = step9_neg_cut(surplus, params)
+    assert add[0] == pytest.approx(2500 / 0.9)     # 除以
+    assert add[1] == 0.0 and add[2] == 0.0
+    assert cut[0] == pytest.approx(2500 / 0.9)

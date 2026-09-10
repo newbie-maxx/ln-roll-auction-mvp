@@ -72,22 +72,23 @@ def step5_tentative_on(required: list[float | None]) -> float:
 
 def step6_pos_reserve_surplus(tentative: float, space: list[float | None], params: Params) -> list[float | None]:
     """§6b.2 ⑥ 验证正备用（用未折算空间——扩大安全性）：
-    剩余正备用(t) = 暂定开机 × (1 − 受阻) − 未折算空间(t) − 受阻系数   【尾部"− 受阻系数"按 PRD 原文保留，
-    疑似笔误（量纲 MW vs 百分数），待业务确认】；盈余(t) = 剩余 − 定义正备用。<0 → 需增机。"""
+    剩余正备用(t) = 暂定开机 × (1 − 受阻系数) − 未折算空间(t)   【业务方 2026-09-10 更正：原 PRD 尾部
+    "− 受阻系数"为笔误（量纲 MW vs 百分数），不再减】；盈余(t) = 剩余 − 定义正备用。<0 → 需增机。"""
     out: list[float | None] = []
     for t in range(N):
         s = space[t]
         if s is None:
             out.append(None)
             continue
-        remain = tentative * (1 - params.受阻系数) - s - params.受阻系数
+        remain = tentative * (1 - params.受阻系数) - s
         out.append(remain - params.正备用)
     return out
 
 
 def step7_pos_add(pos_surplus: list[float | None], params: Params) -> list[float]:
-    """§6b.2 ⑦ 正备用盈余不足部分增添开机 = |盈余| × (1 − 受阻)（仅盈余为负的时段）。"""
-    return [abs(v) * (1 - params.受阻系数) if v is not None and v < 0 else 0.0 for v in pos_surplus]  # type: ignore[operator]
+    """§6b.2 ⑦ 正备用盈余不足部分增添开机 = |盈余| ÷ (1 − 受阻系数)（仅盈余为负的时段）。
+    【业务方 2026-09-10 更正：原"× (1−受阻)"为笔误——补充 X MW 可用备用需开机 X/(1−受阻)】"""
+    return [abs(v) / (1 - params.受阻系数) if v is not None and v < 0 else 0.0 for v in pos_surplus]  # type: ignore[operator]
 
 
 def step8_neg_reserve_surplus(tentative: float, space: list[float | None], params: Params) -> list[float | None]:
@@ -105,8 +106,9 @@ def step8_neg_reserve_surplus(tentative: float, space: list[float | None], param
 
 
 def step9_neg_cut(neg_surplus: list[float | None], params: Params) -> list[float]:
-    """§6b.2 ⑨ 负备用盈余不足部分减少开机 = |盈余| × (1 − 受阻)。"""
-    return [abs(v) * (1 - params.受阻系数) if v is not None and v < 0 else 0.0 for v in neg_surplus]  # type: ignore[operator]
+    """§6b.2 ⑨ 负备用盈余不足部分减少开机 = |盈余| ÷ (1 − 受阻系数)。
+    【业务方 2026-09-10 更正：原"× (1−受阻)"为笔误——与⑦同口径】"""
+    return [abs(v) / (1 - params.受阻系数) if v is not None and v < 0 else 0.0 for v in neg_surplus]  # type: ignore[operator]
 
 
 def step10_verified_on(tentative: float, add: list[float], cut: list[float], params: Params) -> list[float]:
@@ -169,7 +171,7 @@ def system_mode(x: ThermalInput, params: Params) -> dict:
         "load_rate_96": lr96,
         "load_rate_24": avg96to24(lr96),
         "hard_cap": params.辽宁装机 - params.检修计划,
-        "note_step6": "⑥ 尾部「− 受阻系数」按 PRD §6b.2 原文保留（疑似笔误，量纲待业务确认）",
+        "note_step6": "⑥⑦⑨ 已按业务方 2026-09-10 更正：⑥ 不减受阻系数；⑦⑨ 增减机 = |盈余| ÷ (1 − 受阻系数)",
     }
 
 
