@@ -86,7 +86,7 @@ export function PeriodSlidePanel({ period, onClose }: { period: number; onClose:
           <div className="mb-2 flex flex-wrap items-center gap-1">
             <span className="mr-1 text-[11px] font-semibold text-[#94A3B8]">可改边界（全天 96 点）</span>
             {HOUR_EXPAND_KEYS.includes(boundary) && (
-              <span className="rounded bg-[#22C55E]/15 px-1.5 py-0.5 text-[10px] text-[#22C55E]">24 点输入（正=买入/受入，负=卖出/送出）：编辑该小时任一点即 4 点同值（功率值不除以 4）</span>
+              <span className="rounded bg-[#22C55E]/15 px-1.5 py-0.5 text-[10px] text-[#22C55E]">24 点输入（正=买入/受入，负=卖出/送出）：编辑该小时任一点即 4 点同值</span>
             )}
             {BOUNDARY_KEYS.map((k) => (
               <button

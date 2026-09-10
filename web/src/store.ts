@@ -176,7 +176,8 @@ function mapBackend(st: BackendState): { derived: DerivedOutputs; params: Params
     newValue: r.revised_value,
     reason: r.reason,
     opTime: r.op_time,
-    rolledBack: r.status !== '有效',
+    // 回退类修订（恢复原值，reason 以"回退修订"开头）不算活跃修订：回退后数据格恢复原样、不再标绿
+    rolledBack: r.status !== '有效' || (r.reason ?? '').startsWith('回退修订'),
   }))
   const intents: Record<number, IntentEntry> = {}
   for (const [p, v] of Object.entries(st.intents ?? {})) {

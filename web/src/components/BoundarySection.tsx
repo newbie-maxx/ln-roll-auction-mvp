@@ -112,6 +112,8 @@ export function BoundarySection() {
     ? [(selectedPeriod - 1) * 4, selectedPeriod * 4 - 1]
     : null
 
+  // 图例口径（PRD §5.4a ③）：省调负荷=当日直采披露值；其余边界含推断/最近日/预测成分 → 测算值
+  const kindLabel = tab === '负荷' ? '披露值' : '测算值'
   const spec = useMemo(() => ({
     labels: TIME_LABELS_96,
     markAreaIndex: markIdx,
@@ -124,7 +126,7 @@ export function BoundarySection() {
             ]
           : [{ name: '实时联络线预测', data: base, color: '#22C55E', dashed: true }])
       : [
-          { name: hasRevision ? '原值（披露）' : '披露值', data: base, color: '#3B82F6', faded: hasRevision },
+          { name: hasRevision ? `原值（${kindLabel}）` : kindLabel, data: base, color: '#3B82F6', faded: hasRevision },
           ...(hasRevision ? [{ name: '修订后', data: effective, color: '#22C55E' }] : []),
         ],
   }), [tab, isRealtimeTie, base, effective, hasRevision, markIdx, rtHasRev, rtOriginal])
@@ -142,20 +144,19 @@ export function BoundarySection() {
             }`}
           >
             {t.label}
-            {t.derived && <span className="ml-1 text-[10px] text-[#F59E0B]">常量</span>}
           </button>
         ))}
       </div>
 
       {tab === '实时联络线预测' && (
         <div className="border-b border-[#334155] bg-[#1A1E2F]/40 px-3 py-1.5 text-[10px] text-[#22C55E]">
-          实时联络线预测 = 联络线基线 + 交易员预测省间交易总量（正=买入/受入，负=卖出/送出）｜派生值 · 只读，随上两项边界修订联动刷新；有修订时显示 修改前/修改后 双曲线并存｜运行日火电竞价空间按此计算
+          实时联络线预测 = 联络线基线 + 交易员预测省间交易总量（正=买入/受入，负=卖出/送出）｜派生值 · 只读，随上两项边界修订联动刷新
         </div>
       )}
 
       {tab === '省间交易总量' && (
         <div className="border-b border-[#334155] bg-[#1A1E2F]/40 px-3 py-1.5 text-[10px] text-[#22C55E]">
-          交易员预测（省间滚搓 + 省间现货）：正 = 买入/受入，负 = 卖出/送出；24 点输入，默认全 0 待更新——编辑任一点即整小时 4 点同值；计算时自动展开 96 点（功率值，不除以 4）
+          交易员预测（省间滚搓 + 省间现货）：正 = 买入/受入，负 = 卖出/送出；24 点输入，默认全 0 待更新——编辑任一点即整小时 4 点同值，计算时自动展开 96 点
         </div>
       )}
 
