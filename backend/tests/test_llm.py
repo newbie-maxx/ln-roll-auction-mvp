@@ -194,3 +194,29 @@ def test_api_llm_config_masked(api_client, tmp_path, monkeypatch):
     assert "sk-****" in cfg["api_key_masked"] and "1234567890" not in cfg["api_key_masked"]
     env_text = (tmp_path / ".env").read_text()
     assert "sk-1234567890" in env_text           # 只存 .env（gitignored）
+
+
+def test_api_chat_success_path_logs_and_returns(api_client, monkeypatch):
+    """防回归：/api/chat 成功路径（LLM 回复后落 chat_log）不得因属性漏改名而 500。"""
+    from backend.llm import client as llm_client
+    monkeypatch.setattr(llm_client, "_post_chat",
+                        lambda *a, **k: {"content": "好的，这是评审意见（引用工具数值）。"})
+    monkeypatch.setattr(llm_client, "_client_config",
+                        lambda: ("http://fake", "sk-test", "fake-model"))
+    monkeypatch.setenv("LLM_API_KEY", "sk-test")
+    r = api_client.post("/api/chat", json={"message": "评审时段 10", "period": 10})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True and "评审意见" in body["reply"]
+    # chat_log 已落库
+    logs = PIPE_STORE_ROWS(api_client)
+    assert any("评审时段 10" in (row[1] or "") for row in logs)
+
+
+def PIPE_STORE_ROWS(api_client):
+    import sqlite3
+    from backend.config import DB_PATH
+    conn = sqlite3.connect(DB_PATH)
+    rows = conn.execute("SELECT ts, user_message, tool_calls, assistant_reply FROM chat_log").fetchall()
+    conn.close()
+    return rows

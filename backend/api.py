@@ -175,9 +175,9 @@ def set_intent(body: IntentBody) -> dict:
     global RESULT
     try:
         PIPE.set_intent(body.period, listPrice=body.list_price, liftPrice=body.lift_price, volume=body.volume)
-        PIPE.store.set_intent(PIPE._pristine_run_id, body.period, "意向挂牌价",
+        PIPE.store.set_intent(PIPE._run_id, body.period, "意向挂牌价",
                               body.list_price) if body.list_price else None
-        PIPE.store.set_intent(PIPE._pristine_run_id, body.period, "交易量",
+        PIPE.store.set_intent(PIPE._run_id, body.period, "交易量",
                               body.volume) if body.volume else None
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
@@ -263,7 +263,7 @@ def chat(body: ChatBody) -> dict:
     except Exception as e:  # noqa: BLE001
         PIPE.store.log_chat(body.message, [], f"[调用失败] {e}", period=body.period)
         return {"ok": False, "error": f"LLM 调用失败：{e}", "reply": None}
-    PIPE.store.log_chat(body.message, tool_calls, reply, run_id=PIPE._pristine_run_id, period=body.period)
+    PIPE.store.log_chat(body.message, tool_calls, reply, run_id=PIPE._run_id, period=body.period)
     return {"ok": True, "reply": reply, "tool_calls": tool_calls}
 
 
