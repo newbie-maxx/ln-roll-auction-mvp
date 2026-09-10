@@ -76,19 +76,35 @@ export function BoundarySection() {
   const selectedPeriod = useWorkbench((s) => s.selectedPeriod)
 
   const isBoundary = (BOUNDARY_KEYS as readonly string[]).includes(tab)
+  const isRealtimeTie = tab === '实时联络线预测'
   const realtimeTie = derived.realtimeTie96
+  /** 实时联络线预测的修改前序列 = 未修订联络线基线 − 未修订省间交易总量（默认 0） */
+  const rtOriginal = useMemo(() => {
+    if (!isRealtimeTie) return null
+    const tie0 = originalBoundary('联络线')
+    const tot0 = originalBoundary('省间交易总量')
+    return tie0.map((v, i) => {
+      const t = tot0[i]
+      return v !== null && t !== null ? v - t : null
+    })
+  }, [isRealtimeTie])
+  /** 两个输入边界任一有有效修订 → 实时联络线预测显示 修改前/修改后 并存 */
+  const rtHasRev = useMemo(
+    () => revisions.some((r) => !r.rolledBack && (r.boundary === '联络线' || r.boundary === '省间交易总量')),
+    [revisions],
+  )
   const base = useMemo(() => {
     if (isBoundary) return originalBoundary(tab as BoundaryKey)
-    if (tab === '实时联络线预测') return realtimeTie
+    if (isRealtimeTie) return realtimeTie
     return Array.from({ length: 96 }, () => derived.unitOn)
-  }, [tab, isBoundary, derived.unitOn, realtimeTie])
+  }, [tab, isBoundary, isRealtimeTie, derived.unitOn, realtimeTie])
   const effective = useMemo(
     () => (isBoundary ? effectiveSeries(tab as BoundaryKey, base, revisions) : base),
     [tab, isBoundary, base, revisions],
   )
   const hasRevision = useMemo(
-    () => revisions.some((r) => r.boundary === tab && !r.rolledBack),
-    [revisions, tab],
+    () => (isRealtimeTie ? rtHasRev : revisions.some((r) => r.boundary === tab && !r.rolledBack)),
+    [revisions, tab, isRealtimeTie, rtHasRev],
   )
 
   const markIdx: [number, number] | null = selectedPeriod
@@ -99,13 +115,18 @@ export function BoundarySection() {
     labels: TIME_LABELS_96,
     markAreaIndex: markIdx,
     yName: 'MW',
-    series: tab === '实时联络线预测'
-      ? [{ name: '实时联络线预测', data: base, color: '#22C55E', dashed: true }]
+    series: isRealtimeTie
+      ? (rtHasRev && rtOriginal
+          ? [
+              { name: '修改前（原值）', data: rtOriginal, color: '#3B82F6', faded: true },
+              { name: '修改后', data: base, color: '#22C55E' },
+            ]
+          : [{ name: '实时联络线预测', data: base, color: '#22C55E', dashed: true }])
       : [
           { name: hasRevision ? '原值（披露）' : '披露值', data: base, color: '#3B82F6', faded: hasRevision },
           ...(hasRevision ? [{ name: '修订后', data: effective, color: '#22C55E' }] : []),
         ],
-  }), [tab, base, effective, hasRevision, markIdx])
+  }), [tab, isRealtimeTie, base, effective, hasRevision, markIdx, rtHasRev, rtOriginal])
 
   return (
     <section className="rounded-lg border border-[#334155] bg-[#0E1223]">
@@ -127,7 +148,7 @@ export function BoundarySection() {
 
       {tab === '实时联络线预测' && (
         <div className="border-b border-[#334155] bg-[#1A1E2F]/40 px-3 py-1.5 text-[10px] text-[#22C55E]">
-          实时联络线预测 = 联络线基线 − 交易员预测省间交易总量（省间滚搓 + 省间现货）｜派生值 · 只读，随上两项边界修订联动刷新｜运行日火电竞价空间按此计算
+          实时联络线预测 = 联络线基线 − 交易员预测省间交易总量（省间滚搓 + 省间现货）｜派生值 · 只读，随上两项边界修订联动刷新；有修订时显示 修改前/修改后 双曲线并存｜运行日火电竞价空间按此计算
         </div>
       )}
 
@@ -155,7 +176,9 @@ export function BoundarySection() {
         <div className="relative grid grid-cols-12 gap-px">
           {effective.map((v, i) => {
             const t = i + 1
-            const rev = isBoundary ? latestRevisionAt(revisions, tab as BoundaryKey, t) : undefined
+            const rev = isRealtimeTie
+              ? (latestRevisionAt(revisions, '联络线', t) ?? latestRevisionAt(revisions, '省间交易总量', t))
+              : isBoundary ? latestRevisionAt(revisions, tab as BoundaryKey, t) : undefined
             const inSelected = selectedPeriod !== null && t > (selectedPeriod - 1) * 4 && t <= selectedPeriod * 4
             return (
               <div key={t} className="relative">
@@ -187,10 +210,12 @@ export function BoundarySection() {
         </div>
         {hasRevision && (
           <div className="mt-2 max-h-24 overflow-y-auto rounded border border-[#334155] bg-[#020617] p-2 text-[10px]">
-            {revisions.filter((r) => r.boundary === tab && !r.rolledBack).slice().reverse().map((r) => (
+            {revisions.filter((r) => !r.rolledBack && (isRealtimeTie
+              ? r.boundary === '联络线' || r.boundary === '省间交易总量'
+              : r.boundary === tab)).slice().reverse().map((r) => (
               <div key={r.id} className="flex items-center justify-between py-0.5">
                 <span className="text-[#94A3B8]">
-                  t={r.t}：<span className="text-[#3B82F6]">{r.oldValue?.toFixed(1)}</span> → <span className="text-[#22C55E]">{r.newValue.toFixed(1)}</span>
+                  [{r.boundary}] t={r.t}：<span className="text-[#3B82F6]">{r.oldValue?.toFixed(1)}</span> → <span className="text-[#22C55E]">{r.newValue.toFixed(1)}</span>
                   <span className="ml-2 text-[#F59E0B]">理由：{r.reason}</span>
                 </span>
                 <button
