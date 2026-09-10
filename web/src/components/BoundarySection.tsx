@@ -7,6 +7,7 @@ import { latestRevisionAt, originalBoundary, useWorkbench } from '../store'
 
 const TAB_LABELS: { key: string; label: string; derived?: boolean }[] = [
   ...BOUNDARY_KEYS.map((k) => ({ key: k, label: BOUNDARY_LABELS[k] ?? k })),
+  { key: '实时联络线预测', label: '实时联络线预测' },   // 只读派生：无编辑器、无徽标
   { key: '火电开机', label: '火电开机', derived: true },
 ]
 
@@ -51,11 +52,11 @@ function CellEditor({ boundary, t, current, anchor, onClose }: { boundary: Bound
         value={value} onChange={(e) => setValue(e.target.value)} placeholder="新值（MW）" autoFocus
       />
       <input
-        aria-label="修改理由（≥5 字，必填）"
+        aria-label="修改理由（必填）"
         aria-describedby={error ? `cell-edit-error` : undefined}
         aria-invalid={error ? true : undefined}
         className={`mb-2 w-full rounded border bg-[#020617] px-2 py-1 text-xs text-[#F8FAFC] outline-none focus:border-[#3B82F6] ${error ? 'border-[#EF4444]' : 'border-[#334155]'}`}
-        value={reason} onChange={(e) => setReason(e.target.value)} placeholder="修改理由（≥5 字，必填）"
+        value={reason} onChange={(e) => setReason(e.target.value)} placeholder="修改理由（必填，不限字数）"
       />
       {error && <div id={`cell-edit-error`} role="alert" className="mb-2 text-xs text-[#EF4444]">{error}</div>}
       <div className="flex justify-end gap-2">
@@ -75,10 +76,12 @@ export function BoundarySection() {
   const selectedPeriod = useWorkbench((s) => s.selectedPeriod)
 
   const isBoundary = (BOUNDARY_KEYS as readonly string[]).includes(tab)
-  const base = useMemo(
-    () => (isBoundary ? originalBoundary(tab as BoundaryKey) : Array.from({ length: 96 }, () => derived.unitOn)),
-    [tab, isBoundary, derived.unitOn],
-  )
+  const realtimeTie = derived.realtimeTie96
+  const base = useMemo(() => {
+    if (isBoundary) return originalBoundary(tab as BoundaryKey)
+    if (tab === '实时联络线预测') return realtimeTie
+    return Array.from({ length: 96 }, () => derived.unitOn)
+  }, [tab, isBoundary, derived.unitOn, realtimeTie])
   const effective = useMemo(
     () => (isBoundary ? effectiveSeries(tab as BoundaryKey, base, revisions) : base),
     [tab, isBoundary, base, revisions],
@@ -96,11 +99,13 @@ export function BoundarySection() {
     labels: TIME_LABELS_96,
     markAreaIndex: markIdx,
     yName: 'MW',
-    series: [
-      { name: hasRevision ? '原值（披露）' : '披露值', data: base, color: '#3B82F6', faded: hasRevision },
-      ...(hasRevision ? [{ name: '修订后', data: effective, color: '#22C55E' }] : []),
-    ],
-  }), [base, effective, hasRevision, markIdx])
+    series: tab === '实时联络线预测'
+      ? [{ name: '实时联络线预测', data: base, color: '#22C55E', dashed: true }]
+      : [
+          { name: hasRevision ? '原值（披露）' : '披露值', data: base, color: '#3B82F6', faded: hasRevision },
+          ...(hasRevision ? [{ name: '修订后', data: effective, color: '#22C55E' }] : []),
+        ],
+  }), [tab, base, effective, hasRevision, markIdx])
 
   return (
     <section className="rounded-lg border border-[#334155] bg-[#0E1223]">
@@ -119,6 +124,12 @@ export function BoundarySection() {
           </button>
         ))}
       </div>
+
+      {tab === '实时联络线预测' && (
+        <div className="border-b border-[#334155] bg-[#1A1E2F]/40 px-3 py-1.5 text-[10px] text-[#22C55E]">
+          实时联络线预测 = 联络线基线 − 交易员预测省间交易总量（省间滚搓 + 省间现货）｜派生值 · 只读，随上两项边界修订联动刷新｜运行日火电竞价空间按此计算
+        </div>
+      )}
 
       {tab === '省间交易总量' && (
         <div className="border-b border-[#334155] bg-[#1A1E2F]/40 px-3 py-1.5 text-[10px] text-[#22C55E]">

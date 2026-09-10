@@ -103,29 +103,6 @@ function PriceChart() {
   )
 }
 
-function RealtimeTieSection() {
-  const derived = useWorkbench((s) => s.derived)
-  const selectedPeriod = useWorkbench((s) => s.selectedPeriod)
-  if (!derived.realtimeTie96 || derived.realtimeTie96.length === 0) return null
-  const spec = {
-    labels: TIME_LABELS_96,
-    markAreaIndex: selectedPeriod ? ([(selectedPeriod - 1) * 4, selectedPeriod * 4 - 1] as [number, number]) : null,
-    yName: 'MW',
-    height: 170,
-    series: [{ name: '实时联络线预测（= 联络线基线 − 省间交易总量）', data: derived.realtimeTie96, color: '#22C55E', dashed: true }],
-  }
-  return (
-    <section className="rounded-lg border border-[#334155] bg-[#0E1223]">
-      <div className="flex items-center gap-2 border-b border-[#334155] px-3 py-2 text-xs">
-        <span className="font-semibold text-[#94A3B8]">实时联络线预测（派生值 · 只读）</span>
-        <OutputBadge label="输出·只读" />
-        <span className="ml-auto text-[10px] text-[#94A3B8]">= 联络线基线 − 交易员预测省间交易总量（省间滚搓 + 省间现货；24 点自动展开 96 点）｜运行日火电竞价空间按此计算</span>
-      </div>
-      <div className="p-2"><LineChart spec={spec} /></div>
-    </section>
-  )
-}
-
 function LoadRateSection() {
   const derived = useWorkbench((s) => s.derived)
   const selectedPeriod = useWorkbench((s) => s.selectedPeriod)
@@ -261,7 +238,6 @@ export function OutputSection() {
   return (
     <div className="space-y-3">
       <PriceChart />
-      <RealtimeTieSection />
       <LoadRateSection />
       <LandingSection />
     </div>

@@ -329,8 +329,8 @@ class Pipeline:
             raise ValueError(f"非法边界 {boundary}（白名单：{'/'.join(BOUNDARY_WHITELIST)}）")
         if not 1 <= period <= 24:
             raise ValueError("period 须 ∈ 1..24")
-        if len(reason.strip()) < 5:
-            raise ValueError("修改理由须 ≥5 字")
+        if not reason.strip():
+            raise ValueError("修改理由必填（不再强制 ≥5 字）")
         expanded: list[dict] = []
         for pt in points:
             t, value = int(pt["t"]), float(pt["value"])

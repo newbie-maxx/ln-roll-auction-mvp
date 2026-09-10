@@ -27,11 +27,15 @@ def test_modify_boundary_requires_reason(pipe):
     get_result = lambda: pipe.run_all()  # noqa: E731
     reg = build_registry(pipe, get_result)
 
-    # 理由 <5 字 → 拒绝（不落修订、不重算）
+    # 理由为空 → 拒绝（不落修订、不重算；2026-09-10 起不限字数）
     out = reg["modify_boundary"]({"boundary": "负荷", "period": 10,
-                                  "points": [{"t": 37, "value": 46000}], "reason": "短"})
+                                  "points": [{"t": 37, "value": 46000}], "reason": ""})
     assert out["ok"] is False and "理由" in out["error"]
     assert pipe.store.all_revisions() == []
+    # 短理由（非空）现被接受
+    out2 = reg["modify_boundary"]({"boundary": "负荷", "period": 10,
+                                   "points": [{"t": 37, "value": 46000}], "reason": "调"})
+    assert out2["ok"] is True
 
     # 合法理由 → 修订追加 + 联动重算，返回新预测价
     out = reg["modify_boundary"]({"boundary": "负荷", "period": 10,
@@ -78,7 +82,7 @@ def test_tool_loop_with_fake_client(pipe, monkeypatch):
                                                   "arguments": json.dumps({
                                                       "boundary": "负荷", "period": 10,
                                                       "points": [{"t": 37, "value": 46000}],
-                                                      "reason": "短"})}},
+                                                      "reason": ""})}},   # 空理由 → 拒绝分支
                         {"id": "c2", "function": {"name": "modify_boundary",
                                                   "arguments": json.dumps({
                                                       "boundary": "负荷", "period": 10,
@@ -137,10 +141,13 @@ def test_api_state_and_boundary_flow(api_client):
     assert body["m8"]["final_24"] and len(body["m8"]["final_24"]) == 24
     assert "period_detail" in body and body["period_detail"]["landing"]["n"] >= 0
 
-    # 修订（理由不足 → 422）
+    # 修订（理由为空 → 422；短理由现被接受）
     bad = api_client.post("/api/boundary", json={
-        "boundary": "负荷", "period": 10, "points": [{"t": 37, "value": 46000}], "reason": "短"})
+        "boundary": "负荷", "period": 10, "points": [{"t": 37, "value": 46000}], "reason": "  "})
     assert bad.status_code == 422
+    short_ok = api_client.post("/api/boundary", json={
+        "boundary": "负荷", "period": 11, "points": [{"t": 41, "value": 45500}], "reason": "调"})
+    assert short_ok.status_code == 200
     # 合法修订 → 联动重算
     ok = api_client.post("/api/boundary", json={
         "boundary": "负荷", "period": 10,

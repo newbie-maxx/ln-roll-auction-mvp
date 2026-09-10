@@ -293,7 +293,9 @@ def test_revision_append_only_and_rollback(tmp_path):
     assert chain[0]["status"] == "已回退" and chain[0]["rev_id"] == rev1
     assert chain[1]["rev_id"] == rev2 and chain[1]["revised_value"] == 44000.0
     with pytest.raises(ValueError):
-        store.append_revision(D_DAY, "负荷", 1, 1.0, "短")
+        store.append_revision(D_DAY, "负荷", 1, 1.0, "  ")   # 空理由被拒（2026-09-10 起不限字数）
+    store.append_revision(D_DAY, "负荷", 2, 46001.0, "短")   # 短理由（非空）被接受
+    assert store.effective_value(D_DAY, "负荷", 2) == 46001.0
     store.close()
 
 

@@ -180,8 +180,8 @@ def build_registry(pipe: Pipeline, get_result: Callable[[], Any]) -> dict[str, C
 
     def set_params(args: dict) -> dict:
         reason = str(args.get("reason", ""))
-        if len(reason.strip()) < 5:
-            return {"ok": False, "error": "修改理由须 ≥5 字，请先向用户取得理由"}
+        if not reason.strip():
+            return {"ok": False, "error": "修改理由必填，请先向用户取得理由"}
         try:
             pipe.set_params(args.get("params", {}))
         except ValueError as e:
@@ -194,8 +194,8 @@ def build_registry(pipe: Pipeline, get_result: Callable[[], Any]) -> dict[str, C
 
     def modify_boundary(args: dict) -> dict:
         reason = str(args.get("reason", ""))
-        if len(reason.strip()) < 5:
-            return {"ok": False, "error": "修改理由须 ≥5 字，请先向用户取得理由"}
+        if not reason.strip():
+            return {"ok": False, "error": "修改理由必填，请先向用户取得理由"}
         try:
             rev_ids = pipe.modify_boundary(args["boundary"], int(args["period"]),
                                            args["points"], reason)

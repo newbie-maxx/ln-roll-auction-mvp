@@ -84,7 +84,7 @@ export function GlobalParamsDrawer({ open, onClose }: { open: boolean; onClose: 
         </div>
 
         <div className="mt-3">
-          <label htmlFor="param-reason" className="mb-0.5 block text-[10px] text-[#94A3B8]">修改理由（≥5 字，必填）</label>
+          <label htmlFor="param-reason" className="mb-0.5 block text-[10px] text-[#94A3B8]">修改理由（必填，不限字数）</label>
           <input
             id="param-reason"
             aria-describedby={error ? 'param-error' : undefined}

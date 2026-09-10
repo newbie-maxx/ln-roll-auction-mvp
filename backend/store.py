@@ -80,8 +80,8 @@ class Store:
     def append_revision(self, boundary_id: str, boundary_type: str, t: int, revised_value: float,
                         reason: str, operator: str = "交易员", run_id: str = "", period: int | None = None,
                         evidence: str | None = None) -> str:
-        if len(reason.strip()) < 5:
-            raise ValueError("修改理由须 ≥5 字")
+        if not reason.strip():
+            raise ValueError("修改理由必填（2026-09-10 起 不再强制 ≥5 字）")
         prev = self.conn.execute(
             "SELECT rev_id FROM boundary_revision WHERE boundary_id=? AND boundary_type=? AND t=? AND status='有效' "
             "ORDER BY op_time DESC LIMIT 1", (boundary_id, boundary_type, t),

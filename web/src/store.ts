@@ -343,7 +343,7 @@ export const useWorkbench = create<WorkbenchState>((set, get) => {
       const errs = validateParams(next)
       if (errs.length > 0) return errs.join('；')
       if (开机常量 !== undefined && (!Number.isFinite(开机常量) || 开机常量 <= 0)) return '开机常量须为 >0 数值'
-      if (reason.trim().length < 5) return '修改理由须 ≥5 字'
+      if (!reason.trim()) return '修改理由必填'
       const unitOn = 开机常量 ?? get().unitOn
       const derived = recalcDerived(next, unitOn, get().revisions, get().intents)
       const changes = Object.entries({ ...paramPatch, ...(开机常量 !== undefined ? { 开机常量 } : {}) })
