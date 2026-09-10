@@ -25,21 +25,21 @@ DA_OPTIONAL = ["检修容量", "日前开机", "集中式风电", "集中式光�
 RT_REQUIRED = ["实时电价", "联络线"]
 RT_OPTIONAL = ["24点平均日前负荷率", "实时开机", "开机容量", "负荷", "水电", "核电", "地方燃煤",
                "风电", "光伏", "非市场化", "竞价空间"]
-ROLL_REQUIRED = ["成交量", "价格"]
+ROLL_REQUIRED = ["成交量"]   # 价格 sheet 可选（缺则展示用合成占位）
 
 # 滚撮日候选所需完整边界（M7 空间公式八项）
 D_DAY_REQUIRED_BOUNDARIES = ["负荷", "水电", "核电", "地方燃煤", "风电", "光伏", "联络线", "非市场化"]
 
 
 def detect_kind(sheet_names: list[str]) -> str | None:
-    """按 sheet 签名自动识别表类型：滚撮 > 实时 > 日前。"""
+    """按 sheet 签名自动识别表类型：日前 > 实时 > 滚撮（成交量 sheet 即滚撮，支持长/宽布局）。"""
     names = set(sheet_names)
-    if set(ROLL_REQUIRED) <= names:
-        return "roll"
-    if set(RT_REQUIRED) <= names:
-        return "realtime"
     if set(DA_REQUIRED) <= names:
         return "day_ahead"
+    if set(RT_REQUIRED) <= names:
+        return "realtime"
+    if "成交量" in names:
+        return "roll"
     return None
 
 
@@ -62,19 +62,30 @@ def validate_upload(path: Path) -> dict:
 
         required = {"day_ahead": DA_REQUIRED, "realtime": RT_REQUIRED, "roll": ROLL_REQUIRED}[kind]
         expected_cols = 24 if kind == "roll" else 96
+        # 滚撮长表（行=日期+小时）列数豁免：成交量 sheet 只需 2 列（日期+成交量）
+        long_layout_ok = kind == "roll"
         days: list[str] = []
         for sheet in required:
             if sheet not in names:
                 errors.append(f"缺必需 sheet「{sheet}」")
                 continue
             ws = wb[sheet]
-            rows = ws.iter_rows(values_only=True)
-            header = next(rows, None)
-            if header is None or len(header) < expected_cols + 1:
+            rows = list(ws.iter_rows(values_only=True))
+            header = rows[0] if rows else None
+            if header is None:
+                errors.append(f"sheet「{sheet}」无表头行")
+                continue
+            # 长表（首数据行带小时）或宽表（≥expected_cols+1 列）
+            first_rows = rows[1:31]
+            is_long = any(r and hasattr(r[0], "hour") and getattr(r[0], "hour", 0) for r in first_rows)
+            if not is_long and len(header) < expected_cols + 1 and not long_layout_ok:
                 errors.append(f"sheet「{sheet}」列数不足：需 1 日期列 + {expected_cols} 数值列（首行表头）")
                 continue
+            if is_long and len(header) < 2:
+                errors.append(f"sheet「{sheet}」长表需 日期+成交量 两列")
+
             sheet_days = 0
-            for r in rows:
+            for r in rows[1:]:
                 if r is None or r[0] is None or not hasattr(r[0], "year"):
                     continue
                 sheet_days += 1

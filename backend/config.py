@@ -17,8 +17,24 @@ RT_XLSX = DATA_DIR / "辽宁省8月实时边界.xlsx"
 DB_PATH = Path(os.environ.get("WB_DB", BACKEND_DIR / "data" / "workbench.db"))
 EXPORT_DIR = BACKEND_DIR / "data" / "exports"
 
-# 省间滚撮真实文件替换位：文件出现于该路径时 loader 自动优先读取（A-0 到位后零改动切换）
+# 省间滚撮真实文件：env 指定 > data/省间滚撮.xlsx > data/ 下按 sheet 签名自动发现（含成交量 sheet）
 ROLL_AUCTION_XLSX = Path(os.environ.get("WB_ROLL_AUCTION", DATA_DIR / "省间滚撮.xlsx"))
+
+
+def find_roll_file() -> Path | None:
+    """滚撮文件解析：显式路径优先；否则在 data/ 自动发现（签名 = 含「成交量」sheet）。"""
+    env = os.environ.get("WB_ROLL_AUCTION")
+    if env:
+        p = Path(env)
+        return p if p.exists() else None
+    if ROLL_AUCTION_XLSX.exists():
+        return ROLL_AUCTION_XLSX
+    from .loaders.roll_reader import looks_like_roll_file
+    known = {DA_XLSX.name, RT_XLSX.name}
+    for p in sorted(DATA_DIR.glob("*.xlsx")):
+        if p.name not in known and looks_like_roll_file(p):
+            return p
+    return None
 
 # 日期角色（已确认）：D=08-31（预测对象）、A=08-30（最新日前出清价日）、A-1=08-29（回溯 08-28…）
 def _load_env_file() -> None:

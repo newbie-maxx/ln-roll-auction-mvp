@@ -133,3 +133,37 @@ def test_revision_survives_day_switch_and_dataset_change(pipe):
 
 def test_default_params_unchanged():
     assert DEFAULT_PARAMS.现货上限 == 1500.0
+
+
+# ---------- 真实滚撮文件（长表适配 + 自动发现） ----------
+
+def test_real_roll_file_long_layout():
+    """业务方 8 月滚撮统计表（长表：行=日期+小时）——读取、小时对齐、自动发现。"""
+    from backend.config import DATA_DIR, find_roll_file
+    from backend.loaders.roll_reader import read_roll_file
+    src = DATA_DIR / "省间滚撮统计8月.xlsx"
+    if not src.exists():                                 # 数据文件随仓库走，正常应在
+        pytest.skip("真实滚撮表不在 data/")
+    data, layout = read_roll_file(src)
+    assert "长表" in layout
+    assert len(data) == 31 and "2026-08-01" in data and "2026-08-31" in data
+    # 小时对齐抽查：08-01 第 3/4/5 时（0 基 2/3/4）= -110/-115.1/-102
+    v = data["2026-08-01"]["volume24"]
+    assert (v[2], v[3], v[4]) == (-110.0, -115.1, -102.0)
+    assert all(x["price24"] is None for x in data.values())   # 无价格 sheet
+    # 自动发现指向该文件
+    assert find_roll_file() == src
+
+
+def test_pipeline_uses_real_roll(pipe):
+    """自动发现生效：全链滚撮来源为真实文件，价格为展示用合成占位。"""
+    data = pipe.loaded()
+    assert "真实文件" in data.roll_source and "长表" in data.roll_source
+    assert any("价格" in w for w in data.warnings)
+    r = pipe.run_all()
+    # M4 基线用了真实量（非 8%~12% 调制形状）：抽查某日基线 = 真实滚撮 + 日前联络线
+    from backend.modules.m4_baseline import day_baseline
+    b = day_baseline(data, "2026-08-01")
+    assert b is not None
+    # 96 点第 9 点（0 基 8）= 小时 2（0 基）展开 → 真实滚撮 + 日前联络线
+    assert b[8] == round(data.roll_auction["2026-08-01"]["volume24"][2] + data.day_ahead["2026-08-01"]["联络线"].values[8], 6)  # noqa: E501

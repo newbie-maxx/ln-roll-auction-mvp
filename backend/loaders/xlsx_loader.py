@@ -15,7 +15,8 @@ from typing import Protocol
 
 import openpyxl
 
-from ..config import DA_SHEETS, DA_XLSX, RT_SHEETS, RT_XLSX, ROLL_AUCTION_XLSX
+from ..config import DA_SHEETS, DA_XLSX, RT_SHEETS, RT_XLSX, find_roll_file
+from ..loaders.roll_reader import read_roll_file
 from ..mock.roll_auction import synth_roll_auction_24
 
 N = 96
@@ -49,7 +50,7 @@ class LoadedData:
     days: list[str]                                   # 库内全部日期（升序）
     day_ahead: dict[str, dict[str, Series]]           # day -> sheet -> Series
     realtime: dict[str, dict[str, Series]]            # day -> sheet -> Series
-    roll_auction: dict[str, dict[str, list[float]]]   # day -> {volume24, price24}
+    roll_auction: dict[str, dict[str, list[float] | None]]   # day -> {volume24, price24}
     roll_source: str
     warnings: list[str] = field(default_factory=list)
 
@@ -125,12 +126,13 @@ def _merge_sheets(base: dict[str, dict[str, list[float | None]]], extra: dict[st
 class XlsxLoader:
     """A 轨实现：基线 xlsx + 上传表 → LoadedData（M1 原始口径）。"""
 
-    def __init__(self, da_path: Path = DA_XLSX, rt_path: Path = RT_XLSX, roll_path: Path | None = None,
+    def __init__(self, da_path: Path = DA_XLSX, rt_path: Path = RT_XLSX, roll_path: Path | None | bool = False,
                  extra_da: tuple[Path, ...] = (), extra_rt: tuple[Path, ...] = (),
                  extra_roll: tuple[Path, ...] = ()) -> None:
         self.da_path = da_path
         self.rt_path = rt_path
-        self.roll_path = roll_path if roll_path is not None else ROLL_AUCTION_XLSX
+        # roll_path：False（默认）= 自动发现；None = 强制禁用（纯合成）；Path = 显式指定
+        self.roll_path = find_roll_file() if roll_path is False else roll_path
         self.extra_da = tuple(extra_da)
         self.extra_rt = tuple(extra_rt)
         self.extra_roll = tuple(extra_roll)
@@ -181,28 +183,42 @@ class XlsxLoader:
                 vals, kinds, srcs, notes = fill_missing(vals)
                 realtime.setdefault(day, {})[sheet] = Series(vals, kinds, srcs, notes)
 
-        # ---- 省间滚撮：真实文件/上传优先（A-0 替换位），否则确定性合成占位 ----
-        roll: dict[str, dict[str, list[float]]] = {}
-        roll_files = [self.roll_path] if self.roll_path.exists() else []
-        roll_files += list(self.extra_roll)
+        # ---- 省间滚撮：真实文件（长/宽表适配）/上传优先，否则确定性合成占位 ----
+        roll: dict[str, dict[str, list[float | None]]] = {}
+        roll_files: list[Path] = [self.roll_path] if self.roll_path is not None and self.roll_path.exists() else []
+        roll_files += [f for f in self.extra_roll if f.exists()]
+        layouts: list[str] = []
+        price_missing = False
+        for f in roll_files:
+            per_day, layout = read_roll_file(f)
+            layouts.append(f"{f.name}（{layout}）")
+            for day, vp in per_day.items():
+                roll[day] = {"volume24": list(vp["volume24"]), "price24": list(vp["price24"]) if vp["price24"] is not None else None}
         if roll_files:
-            roll_source = "、".join(str(p) for p in roll_files)
-            for f in roll_files:
-                vol_by_day = read_sheet(f, "成交量")
-                price_by_day = read_sheet(f, "价格")
-                for day in days:
-                    v24 = (vol_by_day.get(day, []) + [0.0] * 24)[:24]
-                    p24 = (price_by_day.get(day, []) + [0.0] * 24)[:24]
-                    if day in vol_by_day:
-                        roll[day] = {"volume24": v24, "price24": p24}
+            roll_source = "真实文件：" + "、".join(layouts)
         else:
-            roll_source = "确定性合成占位（省间滚撮 24 点本地暂缺，A-0 待业务方提供；可在数据管理上传滚撮表）"
-            for day in days:
-                tie = day_ahead.get(day, {}).get("联络线")
-                tie_vals = tie.values if tie is not None else [None] * N
-                v24, p24 = synth_roll_auction_24(tie_vals)
-                roll[day] = {"volume24": v24, "price24": p24}
+            roll_source = "确定性合成占位（省间滚撮表缺，可在数据管理上传；或放置 data/ 后自动发现）"
             warnings.append(roll_source)
+        # 真实数据内未录小时 → 按 0 入链 + 警示（区别于"已录 0 成交"；PRD M5 未录点位口径）
+        for day, vp in roll.items():
+            if vp["volume24"] is not None:
+                for i, v in enumerate(vp["volume24"]):
+                    if v is None:
+                        vp["volume24"][i] = 0.0
+                        warnings.append(f"{day} 时段 {i + 1} 滚撮量未录 → 按 0 入链（黄警示）")
+        # 缺失日/缺失价格 → 合成兜底（量缺整日合成；价格缺 → 展示用合成价，仅快照展示不进计算链）
+        for day in days:
+            tie = day_ahead.get(day, {}).get("联络线")
+            tie_vals = tie.values if tie is not None else [None] * N
+            synth_v, synth_p = synth_roll_auction_24(tie_vals)
+            if day not in roll or roll[day]["volume24"] is None:
+                roll[day] = {"volume24": synth_v, "price24": roll.get(day, {}).get("price24") or synth_p}
+                warnings.append(f"{day} 滚撮成交量缺 → 合成占位")
+            elif roll[day]["price24"] is None:
+                roll[day]["price24"] = synth_p
+                price_missing = True
+        if price_missing:
+            warnings.append("滚撮表无「价格」sheet：成交量用真实值，价格为展示用合成占位（价格不进计算链）")
 
         return LoadedData(days=days, day_ahead=day_ahead, realtime=realtime,
                           roll_auction=roll, roll_source=roll_source, warnings=warnings)

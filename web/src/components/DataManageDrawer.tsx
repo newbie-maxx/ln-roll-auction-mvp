@@ -63,7 +63,7 @@ export function DataManageDrawer({ open, onClose }: { open: boolean; onClose: ()
             按 sheet 签名自动识别：<br />
             · <span className="text-[#F8FAFC]">日前边界表</span>——必需 sheet：负荷/水电/核电/地方燃煤/风电/光伏/联络线/非市场化/日前电价（可选：检修容量/日前开机/集中式与分散式风光/24点平均日前负荷率）；96 点列<br />
             · <span className="text-[#F8FAFC]">实时边界表</span>——必需 sheet：实时电价/联络线（可选：24点平均日前负荷率/实时开机 等）；96 点列<br />
-            · <span className="text-[#F8FAFC]">省间滚撮表</span>——sheet：成交量/价格；24 点列<br />
+            · <span className="text-[#F8FAFC]">省间滚撮表</span>——sheet：成交量（价格可选，缺则展示用合成占位）；两种布局：宽表（行=日期，24 点列）或长表（行=日期+小时，每日 24 行）<br />
             布局统一：首行表头，首列日期，其后数值列。<span className="text-[#F59E0B]">按日期合并，后传覆盖同日</span>；上传成功即全链重算。
           </div>
           <input
