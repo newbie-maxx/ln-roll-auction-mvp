@@ -15,7 +15,7 @@ description: 辽宁滚搓交易智能体工具调用与安全边界技能。涉�
 | `run_chain()` | pipeline.run_all | 跑流程 |
 | `set_params(params)` | config 校验 + 联动重算 | 改数据 |
 | `modify_boundary(boundary, period, points, reason)` | store.append_revision + 重算 | 改数据（reason ≥5 字强制） |
-| `set_intent(period, list_price?, lift_price?, volume?)` | store.intent | 改数据（价/量 >0） |
+| `set_intent(period, list_price?, lift_price?, volume?)` | pipe.set_intent（缺参字段不变；HTTP 显式 null=清空，2026-09-11） | 改数据（价/量 >0） |
 | `get_module(module, period?)` | 各 m*_module 输出+理由 | 问答 |
 | `search_similar_days(period, threshold?)` | m3/m8 落点检索 | 跑流程 |
 | `explain_period(period)` | 依据链组装 | 问答 |

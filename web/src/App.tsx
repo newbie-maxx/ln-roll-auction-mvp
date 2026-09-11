@@ -1,6 +1,6 @@
 /** 决策工作台主页面（一屏三栏）：左 280 时段导航 / 中 展示区（边界+输出）/ 右 360 助手。
  *  顶栏：标题 + 日期角色徽标 + M1→M8 stepper + 全局参数/导出。≥1440 布局 + 1280 降级。 */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { PeriodNav } from './components/PeriodNav'
 import { BoundarySection } from './components/BoundarySection'
 import { OutputSection } from './components/OutputSection'
@@ -32,6 +32,11 @@ export default function App() {
   const apiBusy = useWorkbench((s) => s.apiBusy)
 
   useEffect(() => { void initLive() }, [initLive])   // 后端可达 → live；否则降级 demo（横幅区分）
+  // 打开时段面板时中栏切 overflow-hidden，残留 scrollTop 会把 absolute 面板顶出可视区 → 先归零
+  const mainRef = useRef<HTMLElement>(null)
+  useEffect(() => {
+    if (selectedPeriod !== null) mainRef.current?.scrollTo({ top: 0 })
+  }, [selectedPeriod])
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-[#020617] text-[#F8FAFC]">
@@ -121,7 +126,7 @@ export default function App() {
         <aside className="w-[280px] shrink-0 border-r border-[#334155]">
           <PeriodNav />
         </aside>
-        <main className={`relative min-w-0 flex-1 p-3 ${paramsOpen || selectedPeriod !== null ? 'overflow-hidden' : 'overflow-y-auto'}`}>
+        <main ref={mainRef} className={`relative min-w-0 flex-1 p-3 ${paramsOpen || selectedPeriod !== null ? 'overflow-hidden' : 'overflow-y-auto'}`}>
           <div className="space-y-3">
             <BoundarySection />
             <OutputSection />

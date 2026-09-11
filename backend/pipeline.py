@@ -213,10 +213,11 @@ class Pipeline:
         self._m7_manual_on = on_96
 
     def set_intent(self, period: int, **kv) -> None:
+        """意向录入：仅更新传入的字段；显式传 None = 清空该字段，未传字段保持不变。"""
         if not 1 <= period <= 24:
             raise ValueError("period 须 ∈ 1..24")
         cur = dict(self._intents.get(period, {"listPrice": None, "liftPrice": None, "volume": None}))
-        cur.update({k: v for k, v in kv.items() if v is not None})
+        cur.update({k: v for k, v in kv.items() if k in ("listPrice", "liftPrice", "volume")})
         for key in ("listPrice", "liftPrice", "volume"):
             if cur[key] is not None and cur[key] <= 0:      # type: ignore[operator]
                 raise ValueError(f"{key} 须 >0")

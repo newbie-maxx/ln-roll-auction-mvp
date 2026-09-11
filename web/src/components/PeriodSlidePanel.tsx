@@ -1,9 +1,10 @@
 /** 时段右滑面板：仅覆盖中栏（左右栏常驻）。全天 96 点曲线 + 数值格（该小时 4 点可改标红、余 92 只读）、
- *  意向价/交易量录入、只读明细区（该时段 空间/负荷率/预测电价 96×4 + 24 点对照/落点/灰度）。 */
-import { useMemo, useState } from 'react'
+ *  落点概率/期望/灰度量价（含意向录入：草稿本地编辑，点「确认并计算」才提交重算）、
+ *  只读明细（该时段 空间/负荷率/预测电价 96×4 + 24 点对照）。 */
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { LineChart } from './LineChart'
 import { TIME_LABELS_96, PERIOD_LABELS_24 } from './BoundarySection'
-import { latestRevisionAt, originalBoundary, useWorkbench } from '../store'
+import { latestRevisionAt, originalBoundary, useWorkbench, type IntentEntry } from '../store'
 import { BOUNDARY_KEYS, BOUNDARY_LABELS, HOUR_EXPAND_KEYS, type BoundaryKey } from '../calc/types'
 
 const fmt = (v: number | null | undefined, d = 1) => (v === null || v === undefined ? '—' : v.toFixed(d))
@@ -37,16 +38,85 @@ function SlideCellEditor({ boundary, t, current, anchor, onClose }: { boundary: 
   )
 }
 
-export function PeriodSlidePanel({ period, onClose }: { period: number; onClose: () => void }) {
-  const revisions = useWorkbench((s) => s.revisions)
-  const derived = useWorkbench((s) => s.derived)
-  const intents = useWorkbench((s) => s.intents)
+/** 意向录入（草稿态）：本地字符串编辑、可删空；点「确认并计算」才提交 store 并触发重算。
+ *  外部变更（助手工具/他处确认）经 committed 比对后同步进草稿，自身确认的回显不覆盖未提交输入。 */
+function IntentEditor({ period }: { period: number }) {
+  const intent = useWorkbench((s) => s.intents[period])
   const setIntent = useWorkbench((s) => s.setIntent)
+  const [draft, setDraft] = useState(() => ({
+    list: String(intent?.listPrice ?? ''), lift: String(intent?.liftPrice ?? ''), vol: String(intent?.volume ?? ''),
+  }))
+  const committed = useRef<IntentEntry>({
+    listPrice: intent?.listPrice ?? null, liftPrice: intent?.liftPrice ?? null, volume: intent?.volume ?? null,
+  })
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const cur: IntentEntry = {
+      listPrice: intent?.listPrice ?? null, liftPrice: intent?.liftPrice ?? null, volume: intent?.volume ?? null,
+    }
+    const last = committed.current
+    if (cur.listPrice === last.listPrice && cur.liftPrice === last.liftPrice && cur.volume === last.volume) return
+    committed.current = cur
+    setDraft({ list: String(cur.listPrice ?? ''), lift: String(cur.liftPrice ?? ''), vol: String(cur.volume ?? '') })
+  }, [intent])
+
+  const dirty = draft.list !== String(committed.current.listPrice ?? '')
+    || draft.lift !== String(committed.current.liftPrice ?? '')
+    || draft.vol !== String(committed.current.volume ?? '')
+
+  const confirm = () => {
+    const patch: Partial<IntentEntry> = {}
+    const fields: Array<[keyof typeof draft, keyof IntentEntry, string]> = [
+      ['list', 'listPrice', '挂牌价'], ['lift', 'liftPrice', '摘牌价'], ['vol', 'volume', '交易量'],
+    ]
+    for (const [dk, ik, label] of fields) {
+      const s = draft[dk].trim()
+      if (s === '') { patch[ik] = null; continue }
+      const n = Number(s)
+      if (!Number.isFinite(n) || n <= 0) { setError(`${label}须为正数`); return }
+      patch[ik] = n
+    }
+    setError(null)
+    setIntent(period, patch)
+    committed.current = {
+      listPrice: patch.listPrice ?? null, liftPrice: patch.liftPrice ?? null, volume: patch.volume ?? null,
+    }
+  }
+
+  const inputCls = 'mono ml-1 w-24 rounded border border-[#334155] bg-[#020617] px-2 py-1 text-[#F8FAFC] outline-none focus:border-[#3B82F6]'
+  return (
+    <div className="rounded-lg border border-[#334155] bg-[#020617] p-3">
+      <div className="mb-2 flex flex-wrap items-center gap-3 text-[11px] text-[#94A3B8]">
+        <label>挂牌价 <input type="number" className={inputCls} value={draft.list}
+          onChange={(e) => setDraft((d) => ({ ...d, list: e.target.value }))}
+          onKeyDown={(e) => e.key === 'Enter' && dirty && confirm()} /> 元/MWh</label>
+        <label>摘牌价 <input type="number" className={inputCls} value={draft.lift}
+          onChange={(e) => setDraft((d) => ({ ...d, lift: e.target.value }))}
+          onKeyDown={(e) => e.key === 'Enter' && dirty && confirm()} /> 元/MWh</label>
+        <label>交易量 <input type="number" className={inputCls} value={draft.vol}
+          onChange={(e) => setDraft((d) => ({ ...d, vol: e.target.value }))}
+          onKeyDown={(e) => e.key === 'Enter' && dirty && confirm()} /> MWh</label>
+        <button onClick={confirm} disabled={!dirty}
+          className={`rounded px-3 py-1 text-xs font-semibold transition-colors duration-150 ${
+            dirty ? 'cursor-pointer bg-[#22C55E] text-[#0F172A] hover:opacity-90' : 'cursor-not-allowed bg-[#1A1E2F] text-[#94A3B8]/60'
+          }`}>确认并计算</button>
+        <span className="text-[10px] text-[#94A3B8]">{dirty ? '有未确认修改（不参与计算）' : '输入后需确认才重算'}</span>
+      </div>
+      {error && <div role="alert" className="text-xs text-[#EF4444]">{error}</div>}
+    </div>
+  )
+}
+
+export function PeriodSlidePanel({ period, onClose }: { period: number; onClose: () => void }) {
+  const derived = useWorkbench((s) => s.derived)
+  const revisions = useWorkbench((s) => s.revisions)
+  const params = useWorkbench((s) => s.params)
+  const intents = useWorkbench((s) => s.intents)
   const [boundary, setBoundary] = useState<BoundaryKey>('负荷')
   const [editing, setEditing] = useState<number | null>(null)
   const [editAnchor, setEditAnchor] = useState<{ left: number; top: number } | null>(null)
   const intent = intents[period]
-
   const hourIdx = Array.from({ length: 4 }, (_, j) => (period - 1) * 4 + j)   // 0-based
 
   const { base, effective, hasRevision } = useMemo(() => {
@@ -135,13 +205,65 @@ export function PeriodSlidePanel({ period, onClose }: { period: number; onClose:
           </div>
         </section>
 
-        {/* 意向录入（24 点，本时段） */}
+        {/* 落点概率 / 期望 / 灰度量价（自中栏底部移入；意向录入草稿+确认后重算） */}
         <section className="rounded-lg border border-[#334155] bg-[#020617] p-3">
-          <div className="mb-2 text-[11px] font-semibold text-[#94A3B8]">意向输入（24 点 · 本时段 · 标「意向」）</div>
-          <div className="flex flex-wrap items-center gap-3 text-[11px] text-[#94A3B8]">
-            <label>挂牌价 <input type="number" className="mono ml-1 w-24 rounded border border-[#334155] bg-[#020617] px-2 py-1 text-[#F8FAFC] outline-none focus:border-[#3B82F6]" value={intent?.listPrice ?? ''} onChange={(e) => setIntent(period, { listPrice: e.target.value === '' ? null : Number(e.target.value) })} /> 元/MWh</label>
-            <label>摘牌价 <input type="number" className="mono ml-1 w-24 rounded border border-[#334155] bg-[#020617] px-2 py-1 text-[#F8FAFC] outline-none focus:border-[#3B82F6]" value={intent?.liftPrice ?? ''} onChange={(e) => setIntent(period, { liftPrice: e.target.value === '' ? null : Number(e.target.value) })} /> 元/MWh</label>
-            <label>交易量 <input type="number" className="mono ml-1 w-24 rounded border border-[#334155] bg-[#020617] px-2 py-1 text-[#F8FAFC] outline-none focus:border-[#3B82F6]" value={intent?.volume ?? ''} onChange={(e) => setIntent(period, { volume: e.target.value === '' ? null : Number(e.target.value) })} /> MWh</label>
+          <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px]">
+            <span className="font-semibold text-[#94A3B8]">落点概率 / 期望 / 灰度量价（24 点 · 本时段）</span>
+            <span className="rounded bg-[#A855F7]/20 px-1.5 py-0.5 text-[10px] font-semibold text-[#A855F7]">输出·只读</span>
+          </div>
+          <IntentEditor key={period} period={period} />
+          <div className="mt-3 grid grid-cols-2 gap-3">
+            <div>
+              <div className="mb-1 text-[11px] font-semibold text-[#F8FAFC]">实时出清价落档（相似运行日 ±{(params.相似日阈值 * 100).toFixed(0)}%）</div>
+              {st.enough ? (
+                <table className="w-full text-[10px]">
+                  <thead>
+                    <tr className="text-[#94A3B8]">
+                      <th className="py-0.5 text-left font-normal">档位（元/MWh）</th>
+                      <th className="text-right font-normal">分子/分母</th>
+                      <th className="text-right font-normal">概率</th>
+                    </tr>
+                  </thead>
+                  <tbody className="mono">
+                    {st.bins.filter((b) => b.count > 0).map((b) => (
+                      <tr key={b.lo} className={`border-t border-[#1A1E2F] ${(b.lo === params.现货下限 || b.hi === params.现货上限) ? 'text-[#22C55E]' : 'text-[#F8FAFC]'}`}>
+                        <td className="py-0.5">[{b.lo}, {b.hi}]</td>
+                        <td className="text-right text-[#94A3B8]">{b.count}/{st.n}</td>
+                        <td className="text-right">{(b.prob * 100).toFixed(1)}%</td>
+                      </tr>
+                    ))}
+                    <tr className="border-t border-[#334155] font-semibold text-[#A855F7]">
+                      <td className="py-1">电价期望 = Σ(档中值×概率)</td>
+                      <td />
+                      <td className="text-right">{fmt(st.expectation)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              ) : (
+                <div className="rounded border border-dashed border-[#334155] p-3 text-center text-[11px] text-[#94A3B8]">样本不足（N={st.n} &lt; 3，不出概率）</div>
+              )}
+              <div className="mt-1 text-[10px] text-[#94A3B8]">统计范围：{st.scope}｜成员：{st.members.map((d) => d.slice(5)).join('、') || '无'}</div>
+            </div>
+
+            <div>
+              <div className="mb-1 text-[11px] font-semibold text-[#F8FAFC]">灰度量价（意向价 − 贴限首/末档 × 量）</div>
+              {grey.evaluated ? (
+                <div className="space-y-1.5 text-[10px]">
+                  <div className="rounded border border-[#334155] bg-[#020617] p-2">
+                    <div className="text-[#94A3B8]">最低落点档 [{grey.lowestBin.lo}, {grey.lowestBin.hi}]（概率 {(grey.probRisk * 100).toFixed(1)}%）｜最高落点档 [{grey.highestBin.lo}, {grey.highestBin.hi}]（概率 {(grey.probGain * 100).toFixed(1)}%）</div>
+                  </div>
+                  <div className="rounded border border-[#22C55E]/40 bg-[#22C55E]/5 p-2">
+                    <div className="text-[#22C55E]">最大收益（卖方视角·贴上限）：{fmt(grey.maxGainPrice?.[0])} ~ {fmt(grey.maxGainPrice?.[1])} 元/MWh × {fmt(intent?.volume ?? null, 0)} MWh = <span className="font-semibold">{fmt(grey.maxGainAmount?.[0], 0)} ~ {fmt(grey.maxGainAmount?.[1], 0)} 元</span>（概率 {(grey.probGain * 100).toFixed(1)}%）</div>
+                  </div>
+                  <div className="rounded border border-[#EF4444]/40 bg-[#EF4444]/5 p-2">
+                    <div className="text-[#EF4444]">最大风险（卖方视角·贴下限）：{fmt(grey.maxRiskPrice?.[0])} ~ {fmt(grey.maxRiskPrice?.[1])} 元/MWh × {fmt(intent?.volume ?? null, 0)} MWh = <span className="font-semibold">{fmt(grey.maxRiskAmount?.[0], 0)} ~ {fmt(grey.maxRiskAmount?.[1], 0)} 元</span>（概率 {(grey.probRisk * 100).toFixed(1)}%）</div>
+                  </div>
+                  <div className="text-[10px] text-[#94A3B8]">方向语义（挂牌卖/摘牌买符号）待业务方按滚撮"价差撮合"口径校正（登记项）</div>
+                </div>
+              ) : (
+                <div className="rounded border border-dashed border-[#334155] p-3 text-center text-[11px] text-[#94A3B8]">{grey.reason ?? '不评估'}</div>
+              )}
+            </div>
           </div>
         </section>
 
@@ -169,18 +291,6 @@ export function PeriodSlidePanel({ period, onClose }: { period: number; onClose:
               <tr className="border-b border-[#1A1E2F]">
                 <td className="py-1 text-[#94A3B8]">预测电价 24 点（最终 · 对照）</td>
                 <td className="text-right text-[#A855F7]">{fmt(derived.pricing.final_24[period - 1])} 元/MWh</td>
-              </tr>
-              <tr>
-                <td className="py-1 text-[#94A3B8]">落点期望 / N</td>
-                <td className="text-right text-[#A855F7]">{st.enough ? `${fmt(st.expectation)} 元/MWh` : '样本不足'} / N={st.n}</td>
-              </tr>
-              <tr>
-                <td className="py-1 text-[#94A3B8]">灰度量价</td>
-                <td className="text-right">
-                  {grey.evaluated
-                    ? <span>收益 {fmt(grey.maxGainAmount?.[0], 0)}~{fmt(grey.maxGainAmount?.[1], 0)} 元（p={(grey.probGain * 100).toFixed(0)}%）；风险 {fmt(grey.maxRiskAmount?.[0], 0)}~{fmt(grey.maxRiskAmount?.[1], 0)} 元（p={(grey.probRisk * 100).toFixed(0)}%）</span>
-                    : <span className="text-[#94A3B8]">{grey.reason}</span>}
-                </td>
               </tr>
             </tbody>
           </table>

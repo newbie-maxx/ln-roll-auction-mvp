@@ -173,12 +173,14 @@ def modify_boundary(body: BoundaryBody) -> dict:
 @app.post("/api/intent")
 def set_intent(body: IntentBody) -> dict:
     global RESULT
+    # 只转发客户端显式提交的字段：null = 清空，未提交 = 不变（pydantic model_fields_set 区分二者）
+    fields = {"list_price": "listPrice", "lift_price": "liftPrice", "volume": "volume"}
+    provided = {fields[k]: getattr(body, k) for k in fields if k in body.model_fields_set}
     try:
-        PIPE.set_intent(body.period, listPrice=body.list_price, liftPrice=body.lift_price, volume=body.volume)
-        PIPE.store.set_intent(PIPE._run_id, body.period, "意向挂牌价",
-                              body.list_price) if body.list_price else None
-        PIPE.store.set_intent(PIPE._run_id, body.period, "交易量",
-                              body.volume) if body.volume else None
+        PIPE.set_intent(body.period, **provided)
+        for snake, label in (("list_price", "意向挂牌价"), ("volume", "交易量")):
+            if provided.get(fields[snake]):
+                PIPE.store.set_intent(PIPE._run_id, body.period, label, getattr(body, snake))
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
     RESULT = PIPE.recalc_point()

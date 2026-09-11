@@ -394,9 +394,9 @@ export const useWorkbench = create<WorkbenchState>((set, get) => {
     setIntent: (period, patch) => {
       if (get().mode === 'live') {
         void liveCall(() => api.setIntent(period, {
-          list_price: patch.listPrice ?? undefined,
-          lift_price: patch.liftPrice ?? undefined,
-          volume: patch.volume ?? undefined,
+          list_price: patch.listPrice,
+          lift_price: patch.liftPrice,
+          volume: patch.volume,
         }), '意向录入')
         return
       }

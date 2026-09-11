@@ -211,8 +211,12 @@ def build_registry(pipe: Pipeline, get_result: Callable[[], Any]) -> dict[str, C
 
     def set_intent(args: dict) -> dict:
         try:
-            pipe.set_intent(int(args["period"]), listPrice=args.get("list_price"),
-                            liftPrice=args.get("lift_price"), volume=args.get("volume"))
+            # 工具调用缺参 = 不改该字段（pipe.set_intent 现把显式 None 视为清空，故先过滤）
+            pipe.set_intent(int(args["period"]), **{k: v for k, v in {
+                "listPrice": args.get("list_price"),
+                "liftPrice": args.get("lift_price"),
+                "volume": args.get("volume"),
+            }.items() if v is not None})
         except ValueError as e:
             return {"ok": False, "error": str(e)}
         r = pipe.recalc_point()

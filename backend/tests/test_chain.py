@@ -327,3 +327,24 @@ def test_m7_step7_step9_divide_not_multiply():
     assert add[0] == pytest.approx(2500 / 0.9)     # 除以
     assert add[1] == 0.0 and add[2] == 0.0
     assert cut[0] == pytest.approx(2500 / 0.9)
+
+
+def test_intent_partial_update_and_explicit_clear(tmp_path):
+    """意向录入语义（2026-09-11）：显式 None = 清空该字段，未传字段保持不变，≤0 拒绝且不落库。"""
+    from backend.loaders.upload_manager import UploadManager
+    from backend.pipeline import Pipeline
+
+    p = Pipeline(store=Store(tmp_path / "t.db"), uploads=UploadManager(tmp_path / "up"))
+    p.set_intent(5, listPrice=300.0, liftPrice=280.0, volume=100.0)
+    assert p.intents()[5] == {"listPrice": 300.0, "liftPrice": 280.0, "volume": 100.0}
+
+    p.set_intent(5, listPrice=310.0)                    # 部分更新：其余字段不变
+    assert p.intents()[5] == {"listPrice": 310.0, "liftPrice": 280.0, "volume": 100.0}
+
+    p.set_intent(5, volume=None)                        # 显式 None 清空
+    assert p.intents()[5]["volume"] is None
+    assert p.intents()[5]["listPrice"] == 310.0
+
+    with pytest.raises(ValueError):                     # 非法值拒绝且原值保留
+        p.set_intent(5, listPrice=0)
+    assert p.intents()[5]["listPrice"] == 310.0
