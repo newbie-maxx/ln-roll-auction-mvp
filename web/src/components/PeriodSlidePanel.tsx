@@ -193,9 +193,7 @@ export function PeriodSlidePanel({ period, onClose }: { period: number; onClose:
         <section className="rounded-lg border border-[#334155] bg-[#020617] p-2">
           <div className="mb-2 flex flex-wrap items-center gap-1">
             <span className="mr-1 text-[11px] font-semibold text-[#94A3B8]">边界（曲线 96 点 · 本时段 4 点）</span>
-            {isBoundary && HOUR_EXPAND_KEYS.includes(tab as BoundaryKey) && (
-              <span className="rounded bg-[#22C55E]/15 px-1.5 py-0.5 text-[10px] text-[#22C55E]">24 点输入（正=买入/受入，负=卖出/送出）：编辑该小时任一点即 4 点同值</span>
-            )}
+
             {BOUNDARY_KEYS.map((k) => (
               <button
                 key={k}
@@ -212,13 +210,18 @@ export function PeriodSlidePanel({ period, onClose }: { period: number; onClose:
                 key={k}
                 onClick={() => { setTab(k); setEditing(null) }}
                 className={`cursor-pointer rounded px-1.5 py-0.5 text-[10px] transition-colors duration-150 ${
-                  tab === k ? 'bg-[#3B82F6] font-semibold text-white' : 'text-[#22C55E]/80 hover:bg-[#1A1E2F] hover:text-[#22C55E]'
+                  tab === k ? 'bg-[#3B82F6] font-semibold text-white' : 'text-[#94A3B8] hover:bg-[#1A1E2F] hover:text-[#F8FAFC]'
                 }`}
               >
                 {k}
               </button>
             ))}
           </div>
+          {isBoundary && HOUR_EXPAND_KEYS.includes(tab as BoundaryKey) && (
+            <div className="mb-2 rounded bg-[#1A1E2F]/40 px-2 py-1 text-[10px] text-[#22C55E]">
+              交易员预测（省间滚搓 + 省间现货）：正 = 买入/受入，负 = 卖出/送出；24 点输入，默认全 0 待更新——编辑该小时任一点即整小时 4 点同值，计算时自动展开 96 点
+            </div>
+          )}
           {isRealtimeTie && (
             <div className="mb-2 rounded bg-[#1A1E2F]/40 px-2 py-1 text-[10px] text-[#22C55E]">
               实时联络线预测 = 联络线基线 + 交易员预测省间交易总量（正=买入/受入，负=卖出/送出）｜派生值 · 只读，随上两项边界修订联动刷新
