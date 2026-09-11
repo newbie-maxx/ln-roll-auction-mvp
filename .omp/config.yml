@@ -1,3 +1,4 @@
 skills:
   customDirectories:
     - vendor/ui-ux-pro-max-skill/.claude/skills
+    - vendor/ppt-master-skill/skills
