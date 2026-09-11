@@ -27,8 +27,8 @@
 | `docu/智能体工具与技能设计.md` | 工具注册表（10 工具）+ 5 skill 拆分 + 交互模式 |
 | `data/*.xlsx` | 8 月日前/实时边界（96 点，只读） |
 | `.agents/skills/roll-auction-*` | 5 个计算技能（开发层，供 omp agent 加载） |
-| `vendor/ui-ux-pro-max-skill/` | vendored UI/UX skill（MIT，离线可用） |
-| `vendor/ppt-master-skill/` | vendored ppt-master skill（MIT，AI 生成/重建/模板填充可编辑 PPTX；依赖 `skills/ppt-master/requirements.txt`） |
+| `vendor/ui-ux-pro-max-skill/` | vendored UI/UX skill（MIT，离线可用；**仅本地，未纳入 git**，见 `.gitignore`） |
+| `vendor/ppt-master-skill/` | vendored ppt-master skill（MIT，AI 生成/重建/模板填充可编辑 PPTX；依赖 `skills/ppt-master/requirements.txt`；**仅本地，未纳入 git**，见 `.gitignore`） |
 | `.omp/config.yml` | omp 项目配置（skills.customDirectories） |
 | `scripts/export_mock_data.py` | xlsx → `web/src/mock/boundaries.json` 幂等导出 |
 | `web/` | React+TS+Vite+Tailwind v4+ECharts 前端 |
@@ -81,5 +81,5 @@ python3 scripts/export_mock_data.py      # 幂等导出 mock（重跑须与已�
 ```
 
 ## 注记
-- `vendor/ui-ux-pro-max-skill` 与 `vendor/ppt-master-skill`（注册路径 `vendor/ppt-master-skill/skills`）均挂 `.omp/config.yml` 的 `skills.customDirectories`；`skill://` 解析需要新会话。
+- `vendor/ui-ux-pro-max-skill` 与 `vendor/ppt-master-skill`（注册路径 `vendor/ppt-master-skill/skills`）均挂 `.omp/config.yml` 的 `skills.customDirectories`；`skill://` 解析需要新会话。两目录体积大（~170MB）且不入 git（`.gitignore`），新机器 clone 后需按 `requirements.txt` 自行放置/安装；`.omp/config.yml` 里指向它们的注册项在缺目录时会报未找到。
 - `python` 命令在本机不存在时统一用 `python3`。

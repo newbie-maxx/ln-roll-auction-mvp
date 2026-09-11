@@ -9,4 +9,5 @@ backend/data/
 __pycache__/
 .venv/
 .venv-ppt/
-vendor/ppt-master-skill/projects/
+vendor/ppt-master-skill/
+vendor/ui-ux-pro-max-skill/
