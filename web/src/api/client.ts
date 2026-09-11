@@ -2,6 +2,13 @@
  *  后端未启动 → 抛 ApiError；store 捕获后降级 demo 模式（顶部横幅区分）。 */
 export const API_BASE: string = import.meta.env.VITE_API_BASE ?? 'http://127.0.0.1:8000'
 
+interface GreySideBackend {
+  evaluated: boolean; reason: string | null
+  gain_price: [number, number] | null; loss_price: [number, number] | null
+  gain_amount: [number, number] | null; loss_amount: [number, number] | null
+  prob_gain: number; prob_loss: number
+}
+
 export class ApiError extends Error {
   status?: number
   constructor(message: string, status?: number) {
@@ -63,15 +70,12 @@ export interface BackendState {
     out_of_range: number; expectation: number | null; scope: string
   }>
   grey_24: Array<{
-    evaluated: boolean; reason: string | null
     lowest_bin: { lo: number; hi: number; prob: number }
     highest_bin: { lo: number; hi: number; prob: number }
-    prob_gain: number; prob_risk: number
-    max_gain_price: [number, number] | null; max_risk_price: [number, number] | null
-    max_gain_amount: [number, number] | null; max_risk_amount: [number, number] | null
+    seller: GreySideBackend; buyer: GreySideBackend
   }>
   boundaries: Record<string, { values: (number | null)[]; kinds: string[]; srcDays: (string | null)[]; notes: (string | null)[] }>
-  intents: Record<string, { listPrice: number | null; liftPrice: number | null; volume: number | null }>
+  intents: Record<string, { listPrice: number | null; listVolume: number | null; liftPrice: number | null; liftVolume: number | null }>
   revisions: Array<{ rev_id: string; boundary_type: string; t: number; period: number | null; revised_value: number; reason: string; status: string; op_time: string }>
   m1_ready: { roll_source: string; warnings: string[] }
   timings_ms: Record<string, number>
@@ -86,7 +90,7 @@ export const api = {
     request<{ ok: boolean; rev_ids: string[]; price_24: number[] }>('/api/boundary', {
       method: 'POST', body: JSON.stringify({ boundary, period, points, reason }),
     }),
-  setIntent: (period: number, patch: { list_price?: number | null; lift_price?: number | null; volume?: number | null }) =>
+  setIntent: (period: number, patch: { list_price?: number | null; list_volume?: number | null; lift_price?: number | null; lift_volume?: number | null }) =>
     request<{ ok: boolean }>('/api/intent', { method: 'POST', body: JSON.stringify({ period, ...patch }) }),
   rollback: (revId: string) =>
     request<{ ok: boolean }>('/api/revision/rollback', { method: 'POST', body: JSON.stringify({ rev_id: revId }) }),

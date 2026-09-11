@@ -45,31 +45,43 @@ function IntentEditor({ period }: { period: number }) {
   const intent = useWorkbench((s) => s.intents[period])
   const setIntent = useWorkbench((s) => s.setIntent)
   const [draft, setDraft] = useState(() => ({
-    list: String(intent?.listPrice ?? ''), lift: String(intent?.liftPrice ?? ''), vol: String(intent?.volume ?? ''),
+    listP: String(intent?.listPrice ?? ''), listQ: String(intent?.listVolume ?? ''),
+    liftP: String(intent?.liftPrice ?? ''), liftQ: String(intent?.liftVolume ?? ''),
   }))
   const committed = useRef<IntentEntry>({
-    listPrice: intent?.listPrice ?? null, liftPrice: intent?.liftPrice ?? null, volume: intent?.volume ?? null,
+    listPrice: intent?.listPrice ?? null, listVolume: intent?.listVolume ?? null,
+    liftPrice: intent?.liftPrice ?? null, liftVolume: intent?.liftVolume ?? null,
   })
   const [error, setError] = useState<string | null>(null)
 
+  const sameCommitted = (cur: IntentEntry) => {
+    const last = committed.current
+    return cur.listPrice === last.listPrice && cur.listVolume === last.listVolume
+      && cur.liftPrice === last.liftPrice && cur.liftVolume === last.liftVolume
+  }
+
   useEffect(() => {
     const cur: IntentEntry = {
-      listPrice: intent?.listPrice ?? null, liftPrice: intent?.liftPrice ?? null, volume: intent?.volume ?? null,
+      listPrice: intent?.listPrice ?? null, listVolume: intent?.listVolume ?? null,
+      liftPrice: intent?.liftPrice ?? null, liftVolume: intent?.liftVolume ?? null,
     }
-    const last = committed.current
-    if (cur.listPrice === last.listPrice && cur.liftPrice === last.liftPrice && cur.volume === last.volume) return
+    if (sameCommitted(cur)) return
     committed.current = cur
-    setDraft({ list: String(cur.listPrice ?? ''), lift: String(cur.liftPrice ?? ''), vol: String(cur.volume ?? '') })
+    setDraft({
+      listP: String(cur.listPrice ?? ''), listQ: String(cur.listVolume ?? ''),
+      liftP: String(cur.liftPrice ?? ''), liftQ: String(cur.liftVolume ?? ''),
+    })
   }, [intent])
 
-  const dirty = draft.list !== String(committed.current.listPrice ?? '')
-    || draft.lift !== String(committed.current.liftPrice ?? '')
-    || draft.vol !== String(committed.current.volume ?? '')
+  const c = committed.current
+  const dirty = draft.listP !== String(c.listPrice ?? '') || draft.listQ !== String(c.listVolume ?? '')
+    || draft.liftP !== String(c.liftPrice ?? '') || draft.liftQ !== String(c.liftVolume ?? '')
 
   const confirm = () => {
     const patch: Partial<IntentEntry> = {}
     const fields: Array<[keyof typeof draft, keyof IntentEntry, string]> = [
-      ['list', 'listPrice', '挂牌价'], ['lift', 'liftPrice', '摘牌价'], ['vol', 'volume', '交易量'],
+      ['listP', 'listPrice', '意向挂牌价'], ['listQ', 'listVolume', '意向挂牌量'],
+      ['liftP', 'liftPrice', '意向摘牌价'], ['liftQ', 'liftVolume', '意向摘牌量'],
     ]
     for (const [dk, ik, label] of fields) {
       const s = draft[dk].trim()
@@ -81,23 +93,26 @@ function IntentEditor({ period }: { period: number }) {
     setError(null)
     setIntent(period, patch)
     committed.current = {
-      listPrice: patch.listPrice ?? null, liftPrice: patch.liftPrice ?? null, volume: patch.volume ?? null,
+      listPrice: patch.listPrice ?? null, listVolume: patch.listVolume ?? null,
+      liftPrice: patch.liftPrice ?? null, liftVolume: patch.liftVolume ?? null,
     }
   }
 
   const inputCls = 'mono ml-1 w-24 rounded border border-[#334155] bg-[#020617] px-2 py-1 text-[#F8FAFC] outline-none focus:border-[#3B82F6]'
+  const enterConfirm = (e: React.KeyboardEvent) => { if (e.key === 'Enter' && dirty) confirm() }
   return (
     <div className="rounded-lg border border-[#334155] bg-[#020617] p-3">
-      <div className="mb-2 flex flex-wrap items-center gap-3 text-[11px] text-[#94A3B8]">
-        <label>挂牌价 <input type="number" className={inputCls} value={draft.list}
-          onChange={(e) => setDraft((d) => ({ ...d, list: e.target.value }))}
-          onKeyDown={(e) => e.key === 'Enter' && dirty && confirm()} /> 元/MWh</label>
-        <label>摘牌价 <input type="number" className={inputCls} value={draft.lift}
-          onChange={(e) => setDraft((d) => ({ ...d, lift: e.target.value }))}
-          onKeyDown={(e) => e.key === 'Enter' && dirty && confirm()} /> 元/MWh</label>
-        <label>交易量 <input type="number" className={inputCls} value={draft.vol}
-          onChange={(e) => setDraft((d) => ({ ...d, vol: e.target.value }))}
-          onKeyDown={(e) => e.key === 'Enter' && dirty && confirm()} /> MWh</label>
+      <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px]">
+        <span className="font-semibold text-[#22C55E]">卖方（挂牌）</span>
+        <label className="text-[#94A3B8]">挂牌价 <input type="number" className={inputCls} value={draft.listP}
+          onChange={(e) => setDraft((d) => ({ ...d, listP: e.target.value }))} onKeyDown={enterConfirm} /> 元/MWh</label>
+        <label className="text-[#94A3B8]">挂牌量 <input type="number" className={inputCls} value={draft.listQ}
+          onChange={(e) => setDraft((d) => ({ ...d, listQ: e.target.value }))} onKeyDown={enterConfirm} /> MWh</label>
+        <span className="font-semibold text-[#3B82F6]">买方（摘牌）</span>
+        <label className="text-[#94A3B8]">摘牌价 <input type="number" className={inputCls} value={draft.liftP}
+          onChange={(e) => setDraft((d) => ({ ...d, liftP: e.target.value }))} onKeyDown={enterConfirm} /> 元/MWh</label>
+        <label className="text-[#94A3B8]">摘牌量 <input type="number" className={inputCls} value={draft.liftQ}
+          onChange={(e) => setDraft((d) => ({ ...d, liftQ: e.target.value }))} onKeyDown={enterConfirm} /> MWh</label>
         <button onClick={confirm} disabled={!dirty}
           className={`rounded px-3 py-1 text-xs font-semibold transition-colors duration-150 ${
             dirty ? 'cursor-pointer bg-[#22C55E] text-[#0F172A] hover:opacity-90' : 'cursor-not-allowed bg-[#1A1E2F] text-[#94A3B8]/60'
@@ -315,23 +330,28 @@ export function PeriodSlidePanel({ period, onClose }: { period: number; onClose:
             </div>
 
             <div>
-              <div className="mb-1 text-[11px] font-semibold text-[#F8FAFC]">灰度量价（意向价 − 贴限首/末档 × 量）</div>
-              {grey.evaluated ? (
-                <div className="space-y-1.5 text-[10px]">
-                  <div className="rounded border border-[#334155] bg-[#020617] p-2">
-                    <div className="text-[#94A3B8]">最低落点档 [{grey.lowestBin.lo}, {grey.lowestBin.hi}]（概率 {(grey.probRisk * 100).toFixed(1)}%）｜最高落点档 [{grey.highestBin.lo}, {grey.highestBin.hi}]（概率 {(grey.probGain * 100).toFixed(1)}%）</div>
-                  </div>
-                  <div className="rounded border border-[#22C55E]/40 bg-[#22C55E]/5 p-2">
-                    <div className="text-[#22C55E]">最大收益（卖方视角·贴上限）：{fmt(grey.maxGainPrice?.[0])} ~ {fmt(grey.maxGainPrice?.[1])} 元/MWh × {fmt(intent?.volume ?? null, 0)} MWh = <span className="font-semibold">{fmt(grey.maxGainAmount?.[0], 0)} ~ {fmt(grey.maxGainAmount?.[1], 0)} 元</span>（概率 {(grey.probGain * 100).toFixed(1)}%）</div>
-                  </div>
-                  <div className="rounded border border-[#EF4444]/40 bg-[#EF4444]/5 p-2">
-                    <div className="text-[#EF4444]">最大风险（卖方视角·贴下限）：{fmt(grey.maxRiskPrice?.[0])} ~ {fmt(grey.maxRiskPrice?.[1])} 元/MWh × {fmt(intent?.volume ?? null, 0)} MWh = <span className="font-semibold">{fmt(grey.maxRiskAmount?.[0], 0)} ~ {fmt(grey.maxRiskAmount?.[1], 0)} 元</span>（概率 {(grey.probRisk * 100).toFixed(1)}%）</div>
-                  </div>
-                  <div className="text-[10px] text-[#94A3B8]">方向语义（挂牌卖/摘牌买符号）待业务方按滚撮"价差撮合"口径校正（登记项）</div>
+              <div className="mb-1 text-[11px] font-semibold text-[#F8FAFC]">灰度量价（卖方/买方分列 · 贴限首/末档 × 各自意向量）</div>
+              <div className="mb-1.5 rounded border border-[#334155] bg-[#020617] p-2 text-[10px] text-[#94A3B8]">
+                最小区间 [{grey.lowestBin.lo}, {grey.lowestBin.hi}]（概率 {(grey.lowestBin.prob * 100).toFixed(1)}%）｜最大区间 [{grey.highestBin.lo}, {grey.highestBin.hi}]（概率 {(grey.highestBin.prob * 100).toFixed(1)}%）
+              </div>
+              {([[grey.seller, '卖方（挂牌）', intent?.listVolume], [grey.buyer, '买方（摘牌）', intent?.liftVolume]] as const).map(([side, title, vol]) => (
+                <div key={title} className="mb-1.5 rounded border border-[#334155] p-2 text-[10px]">
+                  <div className="mb-1 font-semibold text-[#F8FAFC]">{title}</div>
+                  {side.evaluated ? (
+                    <div className="space-y-1">
+                      <div className="rounded border border-[#22C55E]/40 bg-[#22C55E]/5 p-1.5 text-[#22C55E]">
+                        最大收益：{fmt(side.gainPrice?.[0])} ~ {fmt(side.gainPrice?.[1])} 元/MWh × {fmt(vol ?? null, 0)} MWh = <span className="font-semibold">{fmt(side.gainAmount?.[0], 0)} ~ {fmt(side.gainAmount?.[1], 0)} 元</span>（概率 {(side.probGain * 100).toFixed(1)}%）
+                      </div>
+                      <div className="rounded border border-[#EF4444]/40 bg-[#EF4444]/5 p-1.5 text-[#EF4444]">
+                        最大亏损：{fmt(side.lossPrice?.[0])} ~ {fmt(side.lossPrice?.[1])} 元/MWh × {fmt(vol ?? null, 0)} MWh = <span className="font-semibold">{fmt(side.lossAmount?.[0], 0)} ~ {fmt(side.lossAmount?.[1], 0)} 元</span>（概率 {(side.probLoss * 100).toFixed(1)}%）
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-[#94A3B8]">{side.reason ?? '不评估'}</div>
+                  )}
                 </div>
-              ) : (
-                <div className="rounded border border-dashed border-[#334155] p-3 text-center text-[11px] text-[#94A3B8]">{grey.reason ?? '不评估'}</div>
-              )}
+              ))}
+              <div className="text-[10px] text-[#94A3B8]">口径（2026-09-11 锁定）：卖方 收益=挂牌价−最小区间、亏损=最大区间−挂牌价；买方 收益=最大区间−摘牌价、亏损=摘牌价−最小区间</div>
             </div>
           </div>
         </section>

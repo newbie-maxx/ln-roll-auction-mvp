@@ -90,54 +90,70 @@ export function landingStats(
   return { members, n, bins, outOfRange, expectation, enough, numerator: n, denominator: n, scope }
 }
 
-export interface GreyResult {
+export interface GreySide {
   evaluated: boolean
   reason?: string
-  lowestBin: Bin                  // 贴下限首档 [下限, 下限+宽度]
-  highestBin: Bin                 // 贴上限末档 [上限−宽度, 上限]
-  /** 卖方（挂牌）视角；方向语义待业务方按滚撮"价差撮合"口径校正（登记项） */
-  maxGainPrice: [number, number] | null   // [min, max]：挂牌价 − 末档两端
-  maxRiskPrice: [number, number] | null   // 挂牌价 − 首档两端
-  maxGainAmount: [number, number] | null  // × 交易量（元）
-  maxRiskAmount: [number, number] | null
-  probGain: number                // = 末档概率（与落点概率一致，可为 0）
-  probRisk: number                // = 首档概率
+  gainPrice: [number, number] | null   // 最大收益价差区间（元/MWh）
+  lossPrice: [number, number] | null   // 最大亏损价差区间
+  gainAmount: [number, number] | null  // × 对应意向量（元）
+  lossAmount: [number, number] | null
+  probGain: number                     // 收益对应落点档概率（可为 0）
+  probLoss: number
 }
 
-/** 灰度量价：最低/最高落点档与意向挂牌价相减 × 交易量；缺意向价/量 → 不评估 */
-export function greyEvaluate(
-  listPrice: number | null,
-  volume: number | null,
-  bins: Bin[],
-  floor: number,
-  cap: number,
-  width: number,
-): GreyResult {
+export interface GreyResult {
+  lowestBin: Bin                  // 最小区间 = 贴下限首档 [下限, 下限+宽度]
+  highestBin: Bin                 // 最大区间 = 贴上限末档 [上限−宽度, 上限]
+  /** 2026-09-11 业务锁定买卖分列：卖方（挂牌）/买方（摘牌）独立评估 */
+  seller: GreySide                // 收益 = 挂牌价−最小区间；亏损 = 最大区间−挂牌价（×挂牌量）
+  buyer: GreySide                 // 收益 = 最大区间−摘牌价；亏损 = 摘牌价−最小区间（×摘牌量）
+}
+
+export interface GreyIntent {
+  listPrice: number | null
+  listVolume: number | null
+  liftPrice: number | null
+  liftVolume: number | null
+}
+
+/** 灰度量价（买卖分列，2026-09-11）：
+ *  卖方填挂牌价+挂牌量：最大收益=(挂牌价−最小区间两端)×挂牌量(概率=首档)，
+ *    最大亏损=(最大区间两端−挂牌价)×挂牌量(概率=末档)；
+ *  买方填摘牌价+摘牌量：最大收益=(最大区间两端−摘牌价)×摘牌量(概率=末档)，
+ *    最大亏损=(摘牌价−最小区间两端)×摘牌量(概率=首档)。两侧独立，缺价/量不评估。 */
+export function greyEvaluate(intent: GreyIntent, bins: Bin[], floor: number, cap: number, width: number): GreyResult {
   const lowest = bins.find((b) => b.lo === floor) ?? {
     lo: floor, hi: floor + width, mid: floor + width / 2, count: 0, prob: 0,
   }
   const highest = bins.find((b) => b.hi === cap) ?? {
     lo: cap - width, hi: cap, mid: cap - width / 2, count: 0, prob: 0,
   }
-  const base: GreyResult = {
-    evaluated: false, lowestBin: lowest, highestBin: highest,
-    maxGainPrice: null, maxRiskPrice: null, maxGainAmount: null, maxRiskAmount: null,
-    probGain: highest.prob, probRisk: lowest.prob,
+  const side = (
+    price: number | null, volume: number | null,
+    gain: (p: number) => [number, number], loss: (p: number) => [number, number],
+    probGain: number, probLoss: number, priceLabel: string, volLabel: string,
+  ): GreySide => {
+    const base: GreySide = {
+      evaluated: false, gainPrice: null, lossPrice: null, gainAmount: null, lossAmount: null, probGain, probLoss,
+    }
+    if (price === null || price <= 0) return { ...base, reason: `未录${priceLabel}，不评估` }
+    if (volume === null || volume <= 0) return { ...base, reason: `未录${volLabel}，不评估` }
+    const g = gain(price)
+    const l = loss(price)
+    return {
+      ...base, evaluated: true,
+      gainPrice: g, lossPrice: l,
+      gainAmount: [g[0] * volume, g[1] * volume],
+      lossAmount: [l[0] * volume, l[1] * volume],
+    }
   }
-  if (listPrice === null || listPrice <= 0) {
-    return { ...base, reason: '未录意向挂牌价，不评估收益风险' }
-  }
-  if (volume === null || volume <= 0) {
-    return { ...base, reason: '未录交易量，不评估收益风险' }
-  }
-  const gain: [number, number] = [listPrice - highest.hi, listPrice - highest.lo]
-  const risk: [number, number] = [listPrice - lowest.hi, listPrice - lowest.lo]
   return {
-    ...base,
-    evaluated: true,
-    maxGainPrice: gain,
-    maxRiskPrice: risk,
-    maxGainAmount: [gain[0] * volume, gain[1] * volume],
-    maxRiskAmount: [risk[0] * volume, risk[1] * volume],
+    lowestBin: lowest, highestBin: highest,
+    seller: side(intent.listPrice, intent.listVolume,
+      (p) => [p - lowest.hi, p - lowest.lo], (p) => [highest.lo - p, highest.hi - p],
+      lowest.prob, highest.prob, '意向挂牌价', '意向挂牌量'),
+    buyer: side(intent.liftPrice, intent.liftVolume,
+      (p) => [highest.lo - p, highest.hi - p], (p) => [p - lowest.hi, p - lowest.lo],
+      highest.prob, lowest.prob, '意向摘牌价', '意向摘牌量'),
   }
 }

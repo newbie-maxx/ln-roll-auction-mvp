@@ -141,22 +141,32 @@ describe('落点概率与灰度', () => {
     expect(st.expectation).toBeNull()
   })
 
-  it('灰度量价：首/末档与意向价相减 × 量；缺意向价 → 不评估', () => {
+  it('灰度量价买卖分列（2026-09-11）：卖方收益贴首档/亏损贴末档，买方相反；两侧独立评估', () => {
     const { bins } = binPrices([300, 320, 1450, 1480, 500, 600, 700, 800], -100, 1500, 100)
-    const g = greyEvaluate(385, 100, bins, -100, 1500, 100)
-    expect(g.evaluated).toBe(true)
-    expect(g.lowestBin.lo).toBe(-100)
-    expect(g.highestBin.hi).toBe(1500)
-    // 卖方视角：最大收益价 = 挂牌价 − 末档两端 [385−1500, 385−1400]
-    expect(g.maxGainPrice).toEqual([385 - 1500, 385 - 1400])
-    // 最大风险价 = 挂牌价 − 首档两端 [385−0, 385−(−100)]（首档 [−100,0]）
-    expect(g.maxRiskPrice).toEqual([385 - 0, 385 + 100])
-    expect(g.maxRiskAmount).toEqual([(385 - 0) * 100, (385 + 100) * 100])
-    expect(g.probGain).toBeCloseTo(2 / 8, 12)
-    expect(g.probRisk).toBeCloseTo(0, 12)
+    const g = greyEvaluate({ listPrice: 385, listVolume: 100, liftPrice: 700, liftVolume: 50 }, bins, -100, 1500, 100)
+    expect(g.lowestBin.lo).toBe(-100)   // 最小区间 [−100, 0]
+    expect(g.highestBin.hi).toBe(1500)  // 最大区间 [1400, 1500]
+    // 卖方：收益 = 挂牌价 − 最小区间两端；亏损 = 最大区间两端 − 挂牌价；× 挂牌量
+    expect(g.seller.evaluated).toBe(true)
+    expect(g.seller.gainPrice).toEqual([385 - 0, 385 - (-100)])
+    expect(g.seller.lossPrice).toEqual([1400 - 385, 1500 - 385])
+    expect(g.seller.gainAmount).toEqual([(385 - 0) * 100, (385 + 100) * 100])
+    expect(g.seller.lossAmount).toEqual([(1400 - 385) * 100, (1500 - 385) * 100])
+    expect(g.seller.probGain).toBeCloseTo(0, 12)      // 首档概率（本组样本无首档落点）
+    expect(g.seller.probLoss).toBeCloseTo(2 / 8, 12)  // 末档概率
+    // 买方：收益 = 最大区间两端 − 摘牌价；亏损 = 摘牌价 − 最小区间两端；× 摘牌量
+    expect(g.buyer.evaluated).toBe(true)
+    expect(g.buyer.gainPrice).toEqual([1400 - 700, 1500 - 700])
+    expect(g.buyer.lossPrice).toEqual([700 - 0, 700 - (-100)])
+    expect(g.buyer.gainAmount).toEqual([(1400 - 700) * 50, (1500 - 700) * 50])
+    expect(g.buyer.probGain).toBeCloseTo(2 / 8, 12)
+    expect(g.buyer.probLoss).toBeCloseTo(0, 12)
 
-    const g2 = greyEvaluate(null, 100, bins, -100, 1500, 100)
-    expect(g2.evaluated).toBe(false)
-    expect(g2.reason).toContain('未录意向挂牌价')
+    // 两侧独立：缺挂牌价 → 卖方不评估；缺摘牌量 → 买方不评估
+    const g2 = greyEvaluate({ listPrice: null, listVolume: 100, liftPrice: 700, liftVolume: null }, bins, -100, 1500, 100)
+    expect(g2.seller.evaluated).toBe(false)
+    expect(g2.seller.reason).toContain('未录意向挂牌价')
+    expect(g2.buyer.evaluated).toBe(false)
+    expect(g2.buyer.reason).toContain('未录意向摘牌量')
   })
 })

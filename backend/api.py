@@ -50,8 +50,9 @@ class BoundaryBody(BaseModel):
 class IntentBody(BaseModel):
     period: int
     list_price: float | None = None
+    list_volume: float | None = None
     lift_price: float | None = None
-    volume: float | None = None
+    lift_volume: float | None = None
 
 
 class RollbackBody(BaseModel):
@@ -174,11 +175,14 @@ def modify_boundary(body: BoundaryBody) -> dict:
 def set_intent(body: IntentBody) -> dict:
     global RESULT
     # 只转发客户端显式提交的字段：null = 清空，未提交 = 不变（pydantic model_fields_set 区分二者）
-    fields = {"list_price": "listPrice", "lift_price": "liftPrice", "volume": "volume"}
+    fields = {"list_price": "listPrice", "list_volume": "listVolume",
+              "lift_price": "liftPrice", "lift_volume": "liftVolume"}
     provided = {fields[k]: getattr(body, k) for k in fields if k in body.model_fields_set}
     try:
         PIPE.set_intent(body.period, **provided)
-        for snake, label in (("list_price", "意向挂牌价"), ("volume", "交易量")):
+        labels = {"list_price": "意向挂牌价", "list_volume": "意向挂牌量",
+                  "lift_price": "意向摘牌价", "lift_volume": "意向摘牌量"}
+        for snake, label in labels.items():
             if provided.get(fields[snake]):
                 PIPE.store.set_intent(PIPE._run_id, body.period, label, getattr(body, snake))
     except ValueError as e:

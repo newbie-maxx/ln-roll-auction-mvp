@@ -105,7 +105,7 @@ class Pipeline:
         self._run_id: str = ""
         self._last_params: Params = DEFAULT_PARAMS
         self._m7_manual_on: list[float] | None = None   # M7 人工自填开机（与系统版并列）
-        self._intents: dict[int, dict] = {}             # period -> {listPrice, liftPrice, volume}
+        self._intents: dict[int, dict] = {}             # period -> {listPrice, listVolume, liftPrice, liftVolume}
 
     # ---------- 数据底账 ----------
     def _loader(self) -> XlsxLoader:
@@ -216,9 +216,9 @@ class Pipeline:
         """意向录入：仅更新传入的字段；显式传 None = 清空该字段，未传字段保持不变。"""
         if not 1 <= period <= 24:
             raise ValueError("period 须 ∈ 1..24")
-        cur = dict(self._intents.get(period, {"listPrice": None, "liftPrice": None, "volume": None}))
-        cur.update({k: v for k, v in kv.items() if k in ("listPrice", "liftPrice", "volume")})
-        for key in ("listPrice", "liftPrice", "volume"):
+        cur = dict(self._intents.get(period, {"listPrice": None, "listVolume": None, "liftPrice": None, "liftVolume": None}))
+        cur.update({k: v for k, v in kv.items() if k in ("listPrice", "listVolume", "liftPrice", "liftVolume")})
+        for key in ("listPrice", "listVolume", "liftPrice", "liftVolume"):
             if cur[key] is not None and cur[key] <= 0:      # type: ignore[operator]
                 raise ValueError(f"{key} 须 >0")
         self._intents[period] = cur
@@ -305,8 +305,7 @@ class Pipeline:
         landing = [m8_pricing.landing_stats(data, params, m7["load_rate_24"], p, d_day) for p in range(1, 25)]
         grey = [
             m8_pricing.grey_evaluate(
-                (self._intents.get(p) or {}).get("listPrice"),
-                (self._intents.get(p) or {}).get("volume"),
+                self._intents.get(p) or {},
                 landing[p - 1], params,
             )
             for p in range(1, 25)

@@ -197,33 +197,46 @@ def landing_stats(data: LoadedData, params: Params, d_lr24: list[float | None], 
     }
 
 
-def grey_evaluate(list_price: float | None, volume: float | None, landing: dict,
-                  params: Params) -> dict:
-    """灰度量价：贴下限首档/贴上限末档与意向挂牌价相减 × 交易量（卖方视角；方向语义待业务校正）。"""
+def grey_evaluate(intents: dict, landing: dict, params: Params) -> dict:
+    """灰度量价（2026-09-11 业务锁定买卖分列口径）：
+    卖方（挂牌）填 挂牌价+挂牌量：最大收益 = (挂牌价−最小区间两端)×挂牌量（概率=首档），
+      最大亏损 = (最大区间两端−挂牌价)×挂牌量（概率=末档）；
+    买方（摘牌）填 摘牌价+摘牌量：最大收益 = (最大区间两端−摘牌价)×摘牌量（概率=末档），
+      最大亏损 = (摘牌价−最小区间两端)×摘牌量（概率=首档）。
+    最小区间 = 贴下限首档，最大区间 = 贴上限末档；两侧独立评估，缺价/量 → 该侧不评估。"""
     floor, cap, width = params.现货下限, params.现货上限, params.区间宽度
     bins = landing["bins"]
     lowest = next((b for b in bins if b["lo"] == floor), {"lo": floor, "hi": floor + width, "prob": 0.0})
     highest = next((b for b in bins if b["hi"] == cap), {"lo": cap - width, "hi": cap, "prob": 0.0})
-    result: dict = {
-        "lowest_bin": lowest, "highest_bin": highest,
-        "prob_gain": highest["prob"], "prob_risk": lowest["prob"],
-        "evaluated": False, "reason": None,
-        "max_gain_price": None, "max_risk_price": None,
-        "max_gain_amount": None, "max_risk_amount": None,
-        "direction_note": "卖方（挂牌）视角；方向语义待业务方按滚撮「价差撮合」口径校正（登记项）",
+
+    def side(price: float | None, volume: float | None,
+             gain: tuple, loss: tuple, prob_gain: float, prob_loss: float,
+             price_label: str, vol_label: str) -> dict:
+        out = {"evaluated": False, "reason": None, "gain_price": None, "loss_price": None,
+               "gain_amount": None, "loss_amount": None, "prob_gain": prob_gain, "prob_loss": prob_loss}
+        if price is None or price <= 0:
+            out["reason"] = f"未录{price_label}，不评估"
+            return out
+        if volume is None or volume <= 0:
+            out["reason"] = f"未录{vol_label}，不评估"
+            return out
+        out.update({
+            "evaluated": True,
+            "gain_price": list(gain(price)), "loss_price": list(loss(price)),
+            "gain_amount": [gain(price)[0] * volume, gain(price)[1] * volume],
+            "loss_amount": [loss(price)[0] * volume, loss(price)[1] * volume],
+        })
+        return out
+
+    low, high = lowest, highest
+    return {
+        "lowest_bin": low, "highest_bin": high,
+        "seller": side(intents.get("listPrice"), intents.get("listVolume"),
+                       lambda p: (p - low["hi"], p - low["lo"]),      # 收益：挂牌价 − 最小区间
+                       lambda p: (high["lo"] - p, high["hi"] - p),    # 亏损：最大区间 − 挂牌价
+                       low["prob"], high["prob"], "意向挂牌价", "意向挂牌量"),
+        "buyer": side(intents.get("liftPrice"), intents.get("liftVolume"),
+                      lambda p: (high["lo"] - p, high["hi"] - p),     # 收益：最大区间 − 摘牌价
+                      lambda p: (p - low["hi"], p - low["lo"]),       # 亏损：摘牌价 − 最小区间
+                      high["prob"], low["prob"], "意向摘牌价", "意向摘牌量"),
     }
-    if list_price is None or list_price <= 0:
-        result["reason"] = "未录意向挂牌价，不评估收益风险"
-        return result
-    if volume is None or volume <= 0:
-        result["reason"] = "未录交易量，不评估收益风险"
-        return result
-    gain = (list_price - highest["hi"], list_price - highest["lo"])
-    risk = (list_price - lowest["hi"], list_price - lowest["lo"])
-    result.update({
-        "evaluated": True,
-        "max_gain_price": list(gain), "max_risk_price": list(risk),
-        "max_gain_amount": [gain[0] * volume, gain[1] * volume],
-        "max_risk_amount": [risk[0] * volume, risk[1] * volume],
-    })
-    return result

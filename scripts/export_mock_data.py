@@ -93,7 +93,7 @@ def main():
         "dayAhead": day_ahead,
         "realtime": {"实时电价": realtime["实时电价"], "24点平均日前负荷率": lr24},
         "rollAuction": roll,
-        "intentDefault": {"listPrice": 385.0, "liftPrice": 370.0, "volume": 100.0},
+        "intentDefault": {"listPrice": 385.0, "listVolume": 100.0, "liftPrice": 370.0, "liftVolume": 80.0},
         "source": "data/辽宁省8月日前边界.xlsx + data/辽宁省8月实时边界.xlsx（省间滚撮为确定性合成占位）",
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)

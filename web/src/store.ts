@@ -18,7 +18,7 @@ export interface MockPayload {
   dayAhead: Record<string, Record<string, number[]>>
   realtime: { 实时电价: Record<string, number[]>; '24点平均日前负荷率': Record<string, number[]> }
   rollAuction: Record<string, { volume24: number[]; price24: number[] }>
-  intentDefault: { listPrice: number; liftPrice: number; volume: number }
+  intentDefault: { listPrice: number; listVolume: number; liftPrice: number; liftVolume: number }
 }
 
 export interface Revision {
@@ -33,7 +33,7 @@ export interface Revision {
   rolledBack?: boolean
 }
 
-export interface IntentEntry { listPrice: number | null; liftPrice: number | null; volume: number | null }
+export interface IntentEntry { listPrice: number | null; listVolume: number | null; liftPrice: number | null; liftVolume: number | null }
 
 export interface ParamChange { time: string; changes: string; reason: string }
 
@@ -147,8 +147,12 @@ function recalcDerived(params: Params, unitOn: number, revisions: Revision[], in
     landing.push(st)
     const intent = intents[p]
     grey.push(greyEvaluate(
-      intent?.listPrice ?? null,
-      intent?.volume ?? null,
+      {
+        listPrice: intent?.listPrice ?? null,
+        listVolume: intent?.listVolume ?? null,
+        liftPrice: intent?.liftPrice ?? null,
+        liftVolume: intent?.liftVolume ?? null,
+      },
       st.bins,
       params.现货下限,
       params.现货上限,
@@ -181,7 +185,7 @@ function mapBackend(st: BackendState): { derived: DerivedOutputs; params: Params
   }))
   const intents: Record<number, IntentEntry> = {}
   for (const [p, v] of Object.entries(st.intents ?? {})) {
-    intents[Number(p)] = { listPrice: v.listPrice, liftPrice: v.liftPrice, volume: v.volume }
+    intents[Number(p)] = { listPrice: v.listPrice, listVolume: v.listVolume, liftPrice: v.liftPrice, liftVolume: v.liftVolume }
   }
   const p8 = st.m8
   const derived: DerivedOutputs = {
@@ -205,14 +209,19 @@ function mapBackend(st: BackendState): { derived: DerivedOutputs; params: Params
       expectation: l.expectation, enough: l.enough,
       numerator: l.n, denominator: l.n, scope: l.scope,
     })),
-    grey: st.grey_24.map((g) => ({
-      evaluated: g.evaluated, reason: g.reason ?? undefined,
-      lowestBin: { ...g.lowest_bin, mid: (g.lowest_bin.lo + g.lowest_bin.hi) / 2, count: 0 },
-      highestBin: { ...g.highest_bin, mid: (g.highest_bin.lo + g.highest_bin.hi) / 2, count: 0 },
-      maxGainPrice: g.max_gain_price, maxRiskPrice: g.max_risk_price,
-      maxGainAmount: g.max_gain_amount, maxRiskAmount: g.max_risk_amount,
-      probGain: g.prob_gain, probRisk: g.prob_risk,
-    })),
+    grey: st.grey_24.map((g) => {
+      const side = (s: { evaluated: boolean; reason?: string | null; gain_price: [number, number] | null; loss_price: [number, number] | null; gain_amount: [number, number] | null; loss_amount: [number, number] | null; prob_gain: number; prob_loss: number }) => ({
+        evaluated: s.evaluated, reason: s.reason ?? undefined,
+        gainPrice: s.gain_price, lossPrice: s.loss_price,
+        gainAmount: s.gain_amount, lossAmount: s.loss_amount,
+        probGain: s.prob_gain, probLoss: s.prob_loss,
+      })
+      return {
+        lowestBin: { ...g.lowest_bin, mid: (g.lowest_bin.lo + g.lowest_bin.hi) / 2, count: 0 },
+        highestBin: { ...g.highest_bin, mid: (g.highest_bin.lo + g.highest_bin.hi) / 2, count: 0 },
+        seller: side(g.seller), buyer: side(g.buyer),
+      }
+    }),
     a1Day: p8.a1_day,
     a1NonPos: p8.a1_non_pos_points,
   }
@@ -395,16 +404,18 @@ export const useWorkbench = create<WorkbenchState>((set, get) => {
       if (get().mode === 'live') {
         void liveCall(() => api.setIntent(period, {
           list_price: patch.listPrice,
+          list_volume: patch.listVolume,
           lift_price: patch.liftPrice,
-          volume: patch.volume,
+          lift_volume: patch.liftVolume,
         }), '意向录入')
         return
       }
       const cur = get().intents[period] ?? { ...DATA.intentDefault }
       const next = { ...cur, ...patch }
       if (next.listPrice !== null && next.listPrice <= 0) return
+      if (next.listVolume !== null && next.listVolume <= 0) return
       if (next.liftPrice !== null && next.liftPrice <= 0) return
-      if (next.volume !== null && next.volume <= 0) return
+      if (next.liftVolume !== null && next.liftVolume <= 0) return
       const intents = { ...get().intents, [period]: next }
       const derived = recalcDerived(get().params, get().unitOn, get().revisions, intents)
       set({ intents, derived, outputsFreshAt: new Date().toISOString() })

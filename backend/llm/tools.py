@@ -74,14 +74,15 @@ TOOLS_SPEC: list[dict] = [
         "type": "function",
         "function": {
             "name": "set_intent",
-            "description": "录入某时段意向挂牌/摘牌价与交易量（>0；供灰度量价）",
+            "description": "录入某时段意向挂牌/摘牌价与量（>0；卖方=挂牌两项，买方=摘牌两项；供灰度量价买卖分列）",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "period": {"type": "integer", "minimum": 1, "maximum": 24},
-                    "list_price": {"type": "number", "description": "意向挂牌价（元/MWh，>0）"},
-                    "lift_price": {"type": "number", "description": "意向摘牌价（元/MWh，>0）"},
-                    "volume": {"type": "number", "description": "交易量（MWh，>0）"},
+                    "list_price": {"type": "number", "description": "意向挂牌价（元/MWh，>0；卖方）"},
+                    "list_volume": {"type": "number", "description": "意向挂牌量（MWh，>0；卖方）"},
+                    "lift_price": {"type": "number", "description": "意向摘牌价（元/MWh，>0；买方）"},
+                    "lift_volume": {"type": "number", "description": "意向摘牌量（MWh，>0；买方）"},
                 },
                 "required": ["period"],
             },
@@ -214,13 +215,13 @@ def build_registry(pipe: Pipeline, get_result: Callable[[], Any]) -> dict[str, C
             # 工具调用缺参 = 不改该字段（pipe.set_intent 现把显式 None 视为清空，故先过滤）
             pipe.set_intent(int(args["period"]), **{k: v for k, v in {
                 "listPrice": args.get("list_price"),
+                "listVolume": args.get("list_volume"),
                 "liftPrice": args.get("lift_price"),
-                "volume": args.get("volume"),
+                "liftVolume": args.get("lift_volume"),
             }.items() if v is not None})
         except ValueError as e:
             return {"ok": False, "error": str(e)}
         r = pipe.recalc_point()
-        _sync_api_result(r)
         return {"ok": True, "grey": r.grey[int(args["period"]) - 1]}
 
     def get_module(args: dict) -> dict:

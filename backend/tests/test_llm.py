@@ -172,16 +172,16 @@ def test_api_state_and_boundary_flow(api_client):
 def test_api_intent_null_clears_and_omitted_keeps(api_client):
     """POST /api/intent 契约（2026-09-11）：显式 null = 清空，字段省略 = 不变（前端删空输入可生效）。"""
     r = api_client.post("/api/intent", json={
-        "period": 10, "list_price": 300, "lift_price": 280, "volume": 100})
+        "period": 10, "list_price": 300, "list_volume": 100, "lift_price": 280, "lift_volume": 80})
     assert r.status_code == 200
     it = api_client.get("/api/state", params={"period": 10}).json()["intents"]["10"]
-    assert it == {"listPrice": 300.0, "liftPrice": 280.0, "volume": 100.0}
+    assert it == {"listPrice": 300.0, "listVolume": 100.0, "liftPrice": 280.0, "liftVolume": 80.0}
 
-    r2 = api_client.post("/api/intent", json={"period": 10, "list_price": None})
+    r2 = api_client.post("/api/intent", json={"period": 10, "list_volume": None})
     assert r2.status_code == 200
     it2 = api_client.get("/api/state", params={"period": 10}).json()["intents"]["10"]
-    assert it2["listPrice"] is None          # 显式 null 清空
-    assert it2["volume"] == 100.0            # 未提交字段不变
+    assert it2["listVolume"] is None          # 显式 null 清空
+    assert it2["listPrice"] == 300.0          # 未提交字段不变
 
     bad = api_client.post("/api/intent", json={"period": 10, "list_price": -5})
     assert bad.status_code == 422
