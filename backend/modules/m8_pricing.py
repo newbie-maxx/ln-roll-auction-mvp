@@ -199,15 +199,19 @@ def landing_stats(data: LoadedData, params: Params, d_lr24: list[float | None], 
 
 def grey_evaluate(intents: dict, landing: dict, params: Params) -> dict:
     """灰度量价（2026-09-11 业务锁定买卖分列口径）：
-    卖方（挂牌）填 挂牌价+挂牌量：最大收益 = (挂牌价−最小区间两端)×挂牌量（概率=首档），
-      最大亏损 = (最大区间两端−挂牌价)×挂牌量（概率=末档）；
-    买方（摘牌）填 摘牌价+摘牌量：最大收益 = (最大区间两端−摘牌价)×摘牌量（概率=末档），
-      最大亏损 = (摘牌价−最小区间两端)×摘牌量（概率=首档）。
-    最小区间 = 贴下限首档，最大区间 = 贴上限末档；两侧独立评估，缺价/量 → 该侧不评估。"""
+    最小区间 = 实际有落点样本的最低实时出清价档、最大区间 = 最高档（无样本回退贴限首/末档，概率 0）；
+    卖方（挂牌）填 挂牌价+挂牌量：最大收益 = (挂牌价−最小区间两端)×挂牌量（概率=最低档），
+      最大亏损 = (最大区间两端−挂牌价)×挂牌量（概率=最高档）；
+    买方（摘牌）填 摘牌价+摘牌量：最大收益 = (最大区间两端−摘牌价)×摘牌量（概率=最高档），
+      最大亏损 = (摘牌价−最小区间两端)×摘牌量（概率=最低档）。两侧独立评估，缺价/量 → 该侧不评估。"""
     floor, cap, width = params.现货下限, params.现货上限, params.区间宽度
     bins = landing["bins"]
-    lowest = next((b for b in bins if b["lo"] == floor), {"lo": floor, "hi": floor + width, "prob": 0.0})
-    highest = next((b for b in bins if b["hi"] == cap), {"lo": cap - width, "hi": cap, "prob": 0.0})
+    present = [b for b in bins if b.get("count", 0) > 0]
+    # 最小/最大区间 = 实际有落点样本（实时出清价）的最低/最高档；无样本回退贴限首/末档（概率 0）
+    lowest = min(present, key=lambda b: b["lo"]) if present else \
+        next((b for b in bins if b["lo"] == floor), {"lo": floor, "hi": floor + width, "prob": 0.0})
+    highest = max(present, key=lambda b: b["hi"]) if present else \
+        next((b for b in bins if b["hi"] == cap), {"lo": cap - width, "hi": cap, "prob": 0.0})
 
     def side(price: float | None, volume: float | None,
              gain: tuple, loss: tuple, prob_gain: float, prob_loss: float,

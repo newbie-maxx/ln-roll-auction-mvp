@@ -117,17 +117,20 @@ export interface GreyIntent {
 }
 
 /** 灰度量价（买卖分列，2026-09-11）：
- *  卖方填挂牌价+挂牌量：最大收益=(挂牌价−最小区间两端)×挂牌量(概率=首档)，
- *    最大亏损=(最大区间两端−挂牌价)×挂牌量(概率=末档)；
- *  买方填摘牌价+摘牌量：最大收益=(最大区间两端−摘牌价)×摘牌量(概率=末档)，
- *    最大亏损=(摘牌价−最小区间两端)×摘牌量(概率=首档)。两侧独立，缺价/量不评估。 */
+ *  最小/最大区间 = 实际有落点样本的最低/最高实时出清价档（无样本回退贴限首/末档，概率 0）；
+ *  卖方填挂牌价+挂牌量：最大收益=(挂牌价−最小区间两端)×挂牌量(概率=最低档)，
+ *    最大亏损=(最大区间两端−挂牌价)×挂牌量(概率=最高档)；
+ *  买方填摘牌价+摘牌量：最大收益=(最大区间两端−摘牌价)×摘牌量(概率=最高档)，
+ *    最大亏损=(摘牌价−最小区间两端)×摘牌量(概率=最低档)。两侧独立，缺价/量不评估。 */
 export function greyEvaluate(intent: GreyIntent, bins: Bin[], floor: number, cap: number, width: number): GreyResult {
-  const lowest = bins.find((b) => b.lo === floor) ?? {
-    lo: floor, hi: floor + width, mid: floor + width / 2, count: 0, prob: 0,
-  }
-  const highest = bins.find((b) => b.hi === cap) ?? {
-    lo: cap - width, hi: cap, mid: cap - width / 2, count: 0, prob: 0,
-  }
+  const present = bins.filter((b) => b.count > 0)
+  // 最小/最大区间 = 实际有落点样本（实时出清价）的最低/最高档；无样本回退贴限首/末档（概率 0）
+  const lowest = present.length > 0
+    ? present.reduce((a, b) => (b.lo < a.lo ? b : a))
+    : (bins.find((b) => b.lo === floor) ?? { lo: floor, hi: floor + width, mid: floor + width / 2, count: 0, prob: 0 })
+  const highest = present.length > 0
+    ? present.reduce((a, b) => (b.hi > a.hi ? b : a))
+    : (bins.find((b) => b.hi === cap) ?? { lo: cap - width, hi: cap, mid: cap - width / 2, count: 0, prob: 0 })
   const side = (
     price: number | null, volume: number | null,
     gain: (p: number) => [number, number], loss: (p: number) => [number, number],

@@ -330,7 +330,7 @@ export function PeriodSlidePanel({ period, onClose }: { period: number; onClose:
             </div>
 
             <div>
-              <div className="mb-1 text-[11px] font-semibold text-[#F8FAFC]">灰度量价（卖方/买方分列 · 贴限首/末档 × 各自意向量）</div>
+              <div className="mb-1 text-[11px] font-semibold text-[#F8FAFC]">灰度量价（卖方/买方分列 · 实际落点首/末档 × 各自意向量）</div>
               <div className="mb-1.5 rounded border border-[#334155] bg-[#020617] p-2 text-[10px] text-[#94A3B8]">
                 最小区间 [{grey.lowestBin.lo}, {grey.lowestBin.hi}]（概率 {(grey.lowestBin.prob * 100).toFixed(1)}%）｜最大区间 [{grey.highestBin.lo}, {grey.highestBin.hi}]（概率 {(grey.highestBin.prob * 100).toFixed(1)}%）
               </div>
@@ -351,7 +351,7 @@ export function PeriodSlidePanel({ period, onClose }: { period: number; onClose:
                   )}
                 </div>
               ))}
-              <div className="text-[10px] text-[#94A3B8]">口径（2026-09-11 锁定）：卖方 收益=挂牌价−最小区间、亏损=最大区间−挂牌价；买方 收益=最大区间−摘牌价、亏损=摘牌价−最小区间</div>
+              <div className="text-[10px] text-[#94A3B8]">区间取实际有落点样本的最低/最高实时出清价档（无样本回退贴限档）；口径（2026-09-11）：卖方 收益=挂牌价−最小区间、亏损=最大区间−挂牌价；买方相反</div>
             </div>
           </div>
         </section>

@@ -141,26 +141,27 @@ describe('落点概率与灰度', () => {
     expect(st.expectation).toBeNull()
   })
 
-  it('灰度量价买卖分列（2026-09-11）：卖方收益贴首档/亏损贴末档，买方相反；两侧独立评估', () => {
+  it('灰度量价买卖分列：区间取实际落点档（非贴限固定档）；卖方收益贴最低档/亏损贴最高档，买方相反', () => {
     const { bins } = binPrices([300, 320, 1450, 1480, 500, 600, 700, 800], -100, 1500, 100)
     const g = greyEvaluate({ listPrice: 385, listVolume: 100, liftPrice: 700, liftVolume: 50 }, bins, -100, 1500, 100)
-    expect(g.lowestBin.lo).toBe(-100)   // 最小区间 [−100, 0]
-    expect(g.highestBin.hi).toBe(1500)  // 最大区间 [1400, 1500]
-    // 卖方：收益 = 挂牌价 − 最小区间两端；亏损 = 最大区间两端 − 挂牌价；× 挂牌量
+    // 实际有样本的最低档 [300,400]、最高档 [1400,1500]；贴限首档 [-100,0] 无样本不采用
+    expect(g.lowestBin.lo).toBe(300)
+    expect(g.highestBin.hi).toBe(1500)
+    // 卖方：收益 = 挂牌价 − 最小档两端；亏损 = 最大档两端 − 挂牌价；× 挂牌量
     expect(g.seller.evaluated).toBe(true)
-    expect(g.seller.gainPrice).toEqual([385 - 0, 385 - (-100)])
+    expect(g.seller.gainPrice).toEqual([385 - 400, 385 - 300])
     expect(g.seller.lossPrice).toEqual([1400 - 385, 1500 - 385])
-    expect(g.seller.gainAmount).toEqual([(385 - 0) * 100, (385 + 100) * 100])
+    expect(g.seller.gainAmount).toEqual([(385 - 400) * 100, (385 - 300) * 100])
     expect(g.seller.lossAmount).toEqual([(1400 - 385) * 100, (1500 - 385) * 100])
-    expect(g.seller.probGain).toBeCloseTo(0, 12)      // 首档概率（本组样本无首档落点）
-    expect(g.seller.probLoss).toBeCloseTo(2 / 8, 12)  // 末档概率
-    // 买方：收益 = 最大区间两端 − 摘牌价；亏损 = 摘牌价 − 最小区间两端；× 摘牌量
+    expect(g.seller.probGain).toBeCloseTo(2 / 8, 12)   // 最低档 [300,400] 概率
+    expect(g.seller.probLoss).toBeCloseTo(2 / 8, 12)   // 最高档 [1400,1500] 概率
+    // 买方：收益 = 最大档两端 − 摘牌价；亏损 = 摘牌价 − 最小档两端；× 摘牌量
     expect(g.buyer.evaluated).toBe(true)
     expect(g.buyer.gainPrice).toEqual([1400 - 700, 1500 - 700])
-    expect(g.buyer.lossPrice).toEqual([700 - 0, 700 - (-100)])
+    expect(g.buyer.lossPrice).toEqual([700 - 400, 700 - 300])
     expect(g.buyer.gainAmount).toEqual([(1400 - 700) * 50, (1500 - 700) * 50])
     expect(g.buyer.probGain).toBeCloseTo(2 / 8, 12)
-    expect(g.buyer.probLoss).toBeCloseTo(0, 12)
+    expect(g.buyer.probLoss).toBeCloseTo(2 / 8, 12)
 
     // 两侧独立：缺挂牌价 → 卖方不评估；缺摘牌量 → 买方不评估
     const g2 = greyEvaluate({ listPrice: null, listVolume: 100, liftPrice: 700, liftVolume: null }, bins, -100, 1500, 100)

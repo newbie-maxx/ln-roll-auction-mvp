@@ -352,29 +352,44 @@ def test_intent_partial_update_and_explicit_clear(tmp_path):
 
 def test_grey_evaluate_seller_buyer_split():
     """灰度量价买卖分列口径（2026-09-11 业务锁定）：
-    卖方 收益=(挂牌价−最小区间两端)×挂牌量(概率=首档)、亏损=(最大区间两端−挂牌价)×挂牌量(概率=末档)；
-    买方 收益=(最大区间两端−摘牌价)×摘牌量(概率=末档)、亏损=(摘牌价−最小区间两端)×摘牌量(概率=首档)。"""
+    最小/最大区间 = 实际有落点样本的最低/最高实时出清价档（非贴限固定档；无样本回退贴限首/末档）；
+    卖方 收益=(挂牌价−最小区间两端)×挂牌量(概率=最低档)、亏损=(最大区间两端−挂牌价)×挂牌量(概率=最高档)；
+    买方 收益=(最大区间两端−摘牌价)×摘牌量(概率=最高档)、亏损=(摘牌价−最小区间两端)×摘牌量(概率=最低档)。"""
     from backend.config import Params
     from backend.modules.m8_pricing import grey_evaluate
 
     params = Params(现货下限=-100.0, 现货上限=1500.0, 区间宽度=100)
-    landing = {"bins": [{"lo": -100.0, "hi": 0.0, "prob": 0.25}, {"lo": 1400.0, "hi": 1500.0, "prob": 0.125}]}
-    g = grey_evaluate({"listPrice": 385.0, "listVolume": 100.0, "liftPrice": 700.0, "liftVolume": 50.0}, landing, params)
+    # 贴限首/末档无样本（count=0）→ 区间取实际有样本的最低档 [100,200] 与最高档 [400,500]
+    landing = {"bins": [
+        {"lo": -100.0, "hi": 0.0, "count": 0, "prob": 0.0},
+        {"lo": 100.0, "hi": 200.0, "count": 3, "prob": 0.3},
+        {"lo": 400.0, "hi": 500.0, "count": 5, "prob": 0.5},
+        {"lo": 1400.0, "hi": 1500.0, "count": 0, "prob": 0.0},
+    ]}
+    g = grey_evaluate({"listPrice": 250.0, "listVolume": 10.0, "liftPrice": 350.0, "liftVolume": 2.0}, landing, params)
+    assert g["lowest_bin"]["lo"] == 100.0 and g["highest_bin"]["hi"] == 500.0   # 实际档，非 [-100,0]/[1400,1500]
     s, b = g["seller"], g["buyer"]
-    assert s["gain_price"] == [385 - 0, 385 - (-100)]           # 挂牌价 − 最小区间两端
-    assert s["loss_price"] == [1400 - 385, 1500 - 385]          # 最大区间两端 − 挂牌价
-    assert s["gain_amount"] == [(385 - 0) * 100, (385 + 100) * 100]
-    assert s["loss_amount"] == [(1400 - 385) * 100, (1500 - 385) * 100]
-    assert s["prob_gain"] == 0.25 and s["prob_loss"] == 0.125   # 收益贴首档、亏损贴末档
-    assert b["gain_price"] == [1400 - 700, 1500 - 700]          # 最大区间两端 − 摘牌价
-    assert b["loss_price"] == [700 - 0, 700 - (-100)]           # 摘牌价 − 最小区间两端
-    assert b["gain_amount"] == [(1400 - 700) * 50, (1500 - 700) * 50]
-    assert b["prob_gain"] == 0.125 and b["prob_loss"] == 0.25
+    assert s["gain_price"] == [250 - 200, 250 - 100]           # 挂牌价 − 最小区间两端
+    assert s["loss_price"] == [400 - 250, 500 - 250]           # 最大区间两端 − 挂牌价
+    assert s["gain_amount"] == [(250 - 200) * 10, (250 - 100) * 10]
+    assert s["loss_amount"] == [(400 - 250) * 10, (500 - 250) * 10]
+    assert s["prob_gain"] == 0.3 and s["prob_loss"] == 0.5
+    assert b["gain_price"] == [400 - 350, 500 - 350]           # 最大区间两端 − 摘牌价
+    assert b["loss_price"] == [350 - 200, 350 - 100]           # 摘牌价 − 最小区间两端
+    assert b["gain_amount"] == [(400 - 350) * 2, (500 - 350) * 2]
+    assert b["prob_gain"] == 0.5 and b["prob_loss"] == 0.3
 
     # 两侧独立：只填买方 → 卖方不评估，买方正常
-    g2 = grey_evaluate({"liftPrice": 700.0, "liftVolume": 50.0}, landing, params)
+    g2 = grey_evaluate({"liftPrice": 350.0, "liftVolume": 2.0}, landing, params)
     assert g2["seller"]["evaluated"] is False and "未录意向挂牌价" in g2["seller"]["reason"]
     assert g2["buyer"]["evaluated"] is True
     # 缺摘牌量 → 买方不评估
-    g3 = grey_evaluate({"liftPrice": 700.0}, landing, params)
+    g3 = grey_evaluate({"liftPrice": 350.0}, landing, params)
     assert g3["buyer"]["evaluated"] is False and "未录意向摘牌量" in g3["buyer"]["reason"]
+
+    # 无任何样本 → 回退贴限首/末档（概率 0）
+    empty = {"bins": [{"lo": -100.0, "hi": 0.0, "count": 0, "prob": 0.0},
+                      {"lo": 1400.0, "hi": 1500.0, "count": 0, "prob": 0.0}]}
+    g4 = grey_evaluate({"listPrice": 250.0, "listVolume": 10.0}, empty, params)
+    assert g4["lowest_bin"]["lo"] == -100.0 and g4["highest_bin"]["hi"] == 1500.0
+    assert g4["seller"]["gain_price"] == [250 - 0, 250 + 100]
