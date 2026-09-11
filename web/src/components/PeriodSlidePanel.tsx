@@ -1,4 +1,5 @@
-/** 时段右滑面板：仅覆盖中栏（左右栏常驻）。全天 96 点曲线 + 数值格（该小时 4 点可改标红、余 92 只读）、
+/** 时段右滑面板：仅覆盖中栏（左右栏常驻）。边界区 = 全天 96 点曲线 + 本时段 4 点强调卡
+ *  （可改边界可编辑；实时联络线预测/火电开机为只读派生 tab）、
  *  落点概率/期望/灰度量价（含意向录入：草稿本地编辑，点「确认并计算」才提交重算）、
  *  只读明细（该时段 空间/负荷率/预测电价 96×4 + 24 点对照）。 */
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -113,31 +114,68 @@ export function PeriodSlidePanel({ period, onClose }: { period: number; onClose:
   const revisions = useWorkbench((s) => s.revisions)
   const params = useWorkbench((s) => s.params)
   const intents = useWorkbench((s) => s.intents)
-  const [boundary, setBoundary] = useState<BoundaryKey>('负荷')
+  const mode = useWorkbench((s) => s.mode)
+  const [tab, setTab] = useState<BoundaryKey | '实时联络线预测' | '火电开机'>('负荷')
   const [editing, setEditing] = useState<number | null>(null)
   const [editAnchor, setEditAnchor] = useState<{ left: number; top: number } | null>(null)
   const intent = intents[period]
   const hourIdx = Array.from({ length: 4 }, (_, j) => (period - 1) * 4 + j)   // 0-based
 
+  const isBoundary = (BOUNDARY_KEYS as readonly string[]).includes(tab)
+  const isRealtimeTie = tab === '实时联络线预测'
+  const realtimeTie = derived.realtimeTie96
+  /** 实时联络线预测的修改前序列 = 未修订联络线基线 + 未修订省间交易总量（默认 0） */
+  const rtOriginal = useMemo(() => {
+    const tie0 = originalBoundary('联络线')
+    const tot0 = originalBoundary('省间交易总量')
+    return tie0.map((v, i) => {
+      const t = tot0[i]
+      return v !== null && t !== null ? v + t : null
+    })
+  }, [])
+  /** 两个输入边界任一有有效修订 → 实时联络线预测显示 修改前/修改后 并存 */
+  const rtHasRev = useMemo(
+    () => revisions.some((r) => !r.rolledBack && (r.boundary === '联络线' || r.boundary === '省间交易总量')),
+    [revisions],
+  )
+
   const { base, effective, hasRevision } = useMemo(() => {
-    const b = originalBoundary(boundary)
+    if (isRealtimeTie) {
+      return { base: realtimeTie, effective: realtimeTie, hasRevision: rtHasRev }
+    }
+    if (!isBoundary) {
+      return { base: derived.on96, effective: derived.on96, hasRevision: false }   // 火电开机：live=11 步推演；demo=常量
+    }
+    const key = tab as BoundaryKey
+    const b = originalBoundary(key)
     const e = b.slice()
     for (const rev of revisions) {
-      if (rev.boundary === boundary && !rev.rolledBack) e[rev.t - 1] = rev.newValue
+      if (rev.boundary === key && !rev.rolledBack) e[rev.t - 1] = rev.newValue
     }
-    return { base: b, effective: e, hasRevision: revisions.some((r) => r.boundary === boundary && !r.rolledBack) }
-  }, [boundary, revisions])
+    return { base: b, effective: e, hasRevision: revisions.some((r) => r.boundary === key && !r.rolledBack) }
+  }, [tab, isBoundary, isRealtimeTie, revisions, realtimeTie, rtHasRev, derived.on96])
 
+  // 图例口径与中栏一致（PRD §5.4a ③）：省调负荷=披露值；其余边界=测算值
+  const kindLabel = tab === '负荷' ? '披露值' : '测算值'
   const spec = useMemo(() => ({
     labels: TIME_LABELS_96,
     markAreaIndex: [hourIdx[0], hourIdx[3]] as [number, number],
     yName: 'MW',
     height: 220,
-    series: [
-      { name: hasRevision ? '原值（披露）' : '披露值', data: base, color: '#3B82F6', faded: hasRevision },
-      ...(hasRevision ? [{ name: '修订后', data: effective, color: '#22C55E' }] : []),
-    ],
-  }), [base, effective, hasRevision, hourIdx])
+    series: isRealtimeTie
+      ? (rtHasRev && rtOriginal
+          ? [
+              { name: '修改前（原值）', data: rtOriginal, color: '#3B82F6', faded: true },
+              { name: '修改后', data: realtimeTie, color: '#22C55E' },
+            ]
+          : [{ name: '实时联络线预测', data: realtimeTie, color: '#22C55E', dashed: true }])
+      : isBoundary
+        ? [
+            { name: hasRevision ? `原值（${kindLabel}）` : kindLabel, data: base, color: '#3B82F6', faded: hasRevision },
+            ...(hasRevision ? [{ name: '修订后', data: effective, color: '#22C55E' }] : []),
+          ]
+        : [{ name: mode === 'live' ? '火电开机（11 步推演）' : `火电开机（demo 常量 ${derived.unitOn.toFixed(1)} MW）`, data: base, color: '#F59E0B', dashed: true }],
+  }), [tab, isBoundary, isRealtimeTie, base, effective, hasRevision, hourIdx, rtHasRev, rtOriginal, realtimeTie, kindLabel, mode, derived.unitOn])
 
   const st = derived.landing[period - 1]
   const grey = derived.grey[period - 1]
@@ -146,59 +184,87 @@ export function PeriodSlidePanel({ period, onClose }: { period: number; onClose:
     <div className="absolute inset-0 z-20 flex flex-col overflow-y-auto border-l border-[#334155] bg-[#0E1223]/98 pl-2 backdrop-blur-sm">
       <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-[#334155] bg-[#0E1223] px-3 py-2">
         <span className="text-sm font-semibold text-[#EF4444]">时段 {period}（{PERIOD_LABELS_24[period - 1]}）</span>
-        <span className="text-[10px] text-[#94A3B8]">该小时 4 个 96 点可改（红），其余 92 点只读</span>
+        <span className="text-[10px] text-[#94A3B8]">本时段 4 点数值卡（可改边界标红可编辑）；实时联络线预测/火电开机为只读派生</span>
         <button onClick={onClose} className="ml-auto cursor-pointer rounded border border-[#334155] px-2 py-0.5 text-xs text-[#94A3B8] hover:border-[#EF4444] hover:text-[#EF4444]">收起 ✕</button>
       </div>
 
       <div className="space-y-3 p-3">
-        {/* 可改边界：全天 96 点，仅该小时 4 点可改 */}
+        {/* 边界：曲线全天 96 点；数值只强调本小时 4 点（可改边界可编辑，派生只读） */}
         <section className="rounded-lg border border-[#334155] bg-[#020617] p-2">
           <div className="mb-2 flex flex-wrap items-center gap-1">
-            <span className="mr-1 text-[11px] font-semibold text-[#94A3B8]">可改边界（全天 96 点）</span>
-            {HOUR_EXPAND_KEYS.includes(boundary) && (
+            <span className="mr-1 text-[11px] font-semibold text-[#94A3B8]">边界（曲线 96 点 · 本时段 4 点）</span>
+            {isBoundary && HOUR_EXPAND_KEYS.includes(tab as BoundaryKey) && (
               <span className="rounded bg-[#22C55E]/15 px-1.5 py-0.5 text-[10px] text-[#22C55E]">24 点输入（正=买入/受入，负=卖出/送出）：编辑该小时任一点即 4 点同值</span>
             )}
             {BOUNDARY_KEYS.map((k) => (
               <button
                 key={k}
-                onClick={() => { setBoundary(k); setEditing(null) }}
+                onClick={() => { setTab(k); setEditing(null) }}
                 className={`cursor-pointer rounded px-1.5 py-0.5 text-[10px] transition-colors duration-150 ${
-                  boundary === k ? 'bg-[#3B82F6] font-semibold text-white' : 'text-[#94A3B8] hover:bg-[#1A1E2F] hover:text-[#F8FAFC]'
+                  tab === k ? 'bg-[#3B82F6] font-semibold text-white' : 'text-[#94A3B8] hover:bg-[#1A1E2F] hover:text-[#F8FAFC]'
                 }`}
               >
                 {BOUNDARY_LABELS[k] ?? k}
               </button>
             ))}
+            {(['实时联络线预测', '火电开机'] as const).map((k) => (
+              <button
+                key={k}
+                onClick={() => { setTab(k); setEditing(null) }}
+                className={`cursor-pointer rounded px-1.5 py-0.5 text-[10px] transition-colors duration-150 ${
+                  tab === k ? 'bg-[#3B82F6] font-semibold text-white' : 'text-[#22C55E]/80 hover:bg-[#1A1E2F] hover:text-[#22C55E]'
+                }`}
+              >
+                {k}
+              </button>
+            ))}
           </div>
+          {isRealtimeTie && (
+            <div className="mb-2 rounded bg-[#1A1E2F]/40 px-2 py-1 text-[10px] text-[#22C55E]">
+              实时联络线预测 = 联络线基线 + 交易员预测省间交易总量（正=买入/受入，负=卖出/送出）｜派生值 · 只读，随上两项边界修订联动刷新
+            </div>
+          )}
+          {tab === '火电开机' && (
+            <div className="mb-2 rounded bg-[#1A1E2F]/40 px-2 py-1 text-[10px] text-[#F59E0B]">
+              {mode === 'live'
+                ? `开机由 11 步推演产出（正/负备用校验 + 上/下半日各取段内最大）：上半日 ${derived.on96[0]?.toFixed(1)} MW｜下半日 ${derived.on96[95]?.toFixed(1)} MW；只读`
+                : `demo 简化：开机 = 全天常量（${derived.unitOn.toFixed(1)} MW）；启动后端进入实时计算模式即为 11 步推演`}
+            </div>
+          )}
           <LineChart spec={spec} />
-          <div className="relative mt-2 grid grid-cols-12 gap-px">
-            {effective.map((v, i) => {
+          <div className="relative mt-2 grid grid-cols-4 gap-2">
+            {hourIdx.map((i) => {
               const t = i + 1
-              const inHour = hourIdx.includes(i)
-              const rev = latestRevisionAt(revisions, boundary, t)
-              const editable = inHour && editing === t
+              const v = effective[i]
+              const rev = isRealtimeTie
+                ? (latestRevisionAt(revisions, '联络线', t) ?? latestRevisionAt(revisions, '省间交易总量', t))
+                : isBoundary ? latestRevisionAt(revisions, tab as BoundaryKey, t) : undefined
+              const editingThis = isBoundary && editing === t
               return (
                 <div key={t} className="relative">
                   <button
                     onClick={(e) => {
-                      if (!inHour) return
+                      if (!isBoundary) return
                       if (editing === t) { setEditing(null); return }
                       const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
                       setEditAnchor({ left: r.left, top: r.bottom })
                       setEditing(t)
                     }}
-                    disabled={!inHour}
-                    className={`mono w-full px-1 py-1 text-left text-[10px] ${
-                      editable ? 'bg-[#EF4444]/25 text-[#F8FAFC] ring-1 ring-[#EF4444]'
-                        : rev ? 'bg-[#22C55E]/15 text-[#22C55E]'
-                        : inHour ? 'bg-[#EF4444]/10 text-[#F8FAFC]'
-                        : 'cursor-not-allowed bg-[#1A1E2F] text-[#94A3B8]/60'
-                    } ${inHour ? 'cursor-pointer' : ''}`}
-                    title={inHour ? '该小时 4 点可改（标红）' : '其余 92 点只读（防误改其它时段）'}
+                    className={`w-full rounded-md border px-2 py-2 text-left transition-colors duration-150 ${
+                      editingThis ? 'border-[#EF4444] bg-[#EF4444]/25 ring-1 ring-[#EF4444]'
+                        : rev ? 'border-[#22C55E]/40 bg-[#22C55E]/15'
+                        : isBoundary ? 'border-[#334155] bg-[#EF4444]/10 hover:border-[#EF4444]/60'
+                        : 'border-[#334155] bg-[#1A1E2F]'
+                    } ${isBoundary ? 'cursor-pointer' : 'cursor-default'}`}
+                    title={rev ? `${rev.oldValue} → ${rev.newValue}｜理由：${rev.reason}` : `${TIME_LABELS_96[i]}：${v ?? '缺输入'}${isBoundary ? '（点击修改）' : ''}`}
                   >
-                    {v === null ? '缺' : v >= 10000 ? (v / 1000).toFixed(1) + 'k' : v.toFixed(0)}
+                    <div className="text-[10px] text-[#94A3B8]">t={t} · {TIME_LABELS_96[i]}</div>
+                    <div className={`mono text-lg leading-tight ${rev ? 'text-[#22C55E]' : 'text-[#F8FAFC]'}`}>
+                      {v === null ? '缺' : v >= 10000 ? (v / 1000).toFixed(1) + 'k' : v.toFixed(1)}
+                    </div>
+                    <div className="text-[9px] text-[#94A3B8]">MW{rev ? ' · 已修订（绿）' : isBoundary ? ' · 点击修改' : ' · 只读'}</div>
                   </button>
-                  {editable && editAnchor && <SlideCellEditor boundary={boundary} t={t} current={v} anchor={editAnchor} onClose={() => setEditing(null)} />}
+                  {editingThis && editAnchor && <SlideCellEditor boundary={tab as BoundaryKey} t={t} current={v} anchor={editAnchor} onClose={() => setEditing(null)} />}
                 </div>
               )
             })}
