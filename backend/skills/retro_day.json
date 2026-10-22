@@ -1,0 +1,77 @@
+{
+  "id": "retro_day",
+  "name": "单日复盘（R1）",
+  "version": "1.0.0",
+  "status": "active",
+  "owner": "retro",
+  "inputs": {
+    "start": {
+      "type": "string",
+      "required": true
+    },
+    "end": {
+      "type": "string",
+      "required": true
+    },
+    "use_llm": {
+      "type": "boolean",
+      "required": false
+    }
+  },
+  "returns": [
+    "report"
+  ],
+  "steps": [
+    {
+      "tool": "actual.availability",
+      "args": {
+        "start": "${start}",
+        "end": "${end}"
+      },
+      "output": "days"
+    },
+    {
+      "assert": "${len(days) >= 1}",
+      "message": "区间内无有效日（实况不齐或无实时电价）"
+    },
+    {
+      "assert": "${len(days) <= 180}",
+      "message": "区间超上限 180 天"
+    },
+    {
+      "assert": "${len(days) == 1}",
+      "message": "retro_day 仅处理单日；多日请走 retro_range"
+    },
+    {
+      "tool": "actual.load_day",
+      "args": {
+        "run_date": "${days[0]}"
+      },
+      "output": "loaded"
+    },
+    {
+      "if": "${loaded.missing_count >= 864}",
+      "then": [
+        {
+          "fail": {
+            "code": "NO_ACTUAL",
+            "message": "该日实况几乎全缺，无法复盘"
+          }
+        }
+      ]
+    },
+    {
+      "tool": "report.render",
+      "args": {
+        "start": "${start}",
+        "end": "${end}",
+        "use_llm": "${use_llm}"
+      },
+      "output": "report"
+    },
+    {
+      "assert": "${len(report.files) >= 2}",
+      "message": "报告文件不全（md+csv）"
+    }
+  ]
+}

@@ -44,6 +44,12 @@
 | `backend/llm/` | client（OpenAI 兼容 + function-calling 循环）/ tools / prompts |
 | `backend/scripts/smoke.py` | 全链耗时与输出完整性冒烟 |
 | `backend/tests/` | pytest（口径边界用例） |
+| `backend/retro/` | 复盘业务实现（R-AI：实况/快照/登记/偏差/分解/跃变/证据包/归因/画像/习惯/报告，skills+MCP 新架构） |
+| `backend/skills/*.json` | 复盘逻辑层：纯配置 SOP 资产（热加载+生命周期管控，无业务代码） |
+| `backend/skill_runtime/` | skill 运行时引擎（解析/校验/执行/热加载/留痕审计） |
+| `backend/mcp/` | 连接层：MCP 原子工具底座（data/retro 两个独立进程 + stdio 客户端可直连） |
+| `backend/retro_api.py` | 复盘 REST API（/api/retro/*、/api/skills/*；挂在 api.py，仅新增路由） |
+| `backend/scripts/retro_smoke.py` | 复盘全链 + MCP 直连 + skill 热加载冒烟 |
 
 ## 技能/工具映射表
 
@@ -54,6 +60,7 @@
 | `roll-auction-thermal` | `modules/m7_thermal.py` | `get_module(m7)` | §6b.2 |
 | `roll-auction-pricing` | `modules/m8_pricing.py` | `explain_period`、`get_module(m8)` | §6.1 |
 | `roll-auction-agent-ops` | `llm/tools.py`、`llm/prompts.py`、`api.py` | `run_chain`、`modify_boundary`、`set_intent`、`rollback_revision` | §5.4b、附录 D |
+| `roll-auction-retro` | `retro/*`、`skill_runtime/`、`mcp/`、`retro_api.py` | （复盘走 MCP 原子工具 + skill SOP，不走 10 工具注册表） | 复盘MVP_PRD → 复盘PRD-AI归因版 v1.8.4 |
 
 改某个模块的计算逻辑 → 先读对应 skill 与 Step 3 口径文档 → 改代码 → 同步 skill 与文档 → commit。
 
@@ -75,6 +82,9 @@ cd web && npx vitest run       # 前端口径用例
 cd backend && uvicorn api:app --reload   # API (8000, 托管 web/dist)
 cd backend && python -m pytest -q        # 后端口径用例（环境无 python 别名时用 python3）
 cd backend && python scripts/smoke.py    # 全链冒烟（全量 ≤30s、单点 ≤1s）
+cd backend && ../.venv/bin/python -m pytest -q          # 全量口径用例（含复盘 tests/test_retro_*）
+cd backend && ../.venv/bin/python scripts/retro_smoke.py   # 复盘全链 + MCP 直连 + skill 热加载冒烟
+cd backend && ../.venv/bin/python -m backend.mcp.client --server retro --list   # MCP 原子工具直连
 
 # 根
 python3 scripts/export_mock_data.py      # 幂等导出 mock（重跑须与已提交 JSON 一致）

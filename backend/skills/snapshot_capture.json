@@ -1,0 +1,18 @@
+{
+  "id": "snapshot_capture",
+  "name": "交易结束（预测落档）",
+  "version": "1.0.0",
+  "status": "active",
+  "owner": "retro",
+  "inputs": {
+    "run_date": {"type": "string", "required": true},
+    "trade_date": {"type": "string", "required": false}
+  },
+  "returns": ["captured"],
+  "steps": [
+    {"tool": "actual.availability", "args": {"start": "${run_date}", "end": "${run_date}"}, "output": "days"},
+    {"assert": "${len(days) == 1}", "message": "该日不在可用日清单，无法作为运行日落档"},
+    {"tool": "snapshot.capture", "args": {"run_date": "${run_date}", "trade_date": "${trade_date}"}, "output": "captured"},
+    {"assert": "${captured.seq >= 1}", "message": "落档未产生快照"}
+  ]
+}

@@ -28,6 +28,10 @@ app.add_middleware(
 
 PIPE = Pipeline()
 RESULT: ChainResult | None = None
+# 复盘（skills+MCP 新架构，B2）：仅新增路由挂载，既有工作台路由不动
+from .retro_api import router as retro_router
+
+app.include_router(retro_router)
 
 
 class ParamsBody(BaseModel):

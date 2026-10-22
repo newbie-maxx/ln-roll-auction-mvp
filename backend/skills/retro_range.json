@@ -1,0 +1,25 @@
+{
+  "id": "retro_range",
+  "name": "多日复盘（R2）",
+  "version": "1.0.0",
+  "status": "active",
+  "owner": "retro",
+  "inputs": {
+    "start": {"type": "string", "required": true},
+    "end": {"type": "string", "required": true},
+    "use_llm": {"type": "boolean", "required": false}
+  },
+  "returns": ["report"],
+  "steps": [
+    {"tool": "actual.availability", "args": {"start": "${start}", "end": "${end}"}, "output": "days"},
+    {"assert": "${len(days) >= 2}", "message": "多日复盘需 ≥2 个有效日；单日请走 retro_day"},
+    {"assert": "${len(days) <= 180}", "message": "区间超上限 180 天"},
+    {"foreach": "${days}", "as": "d", "body": [
+      {"tool": "actual.load_day", "args": {"run_date": "${d}"}, "output": "loaded_d"}
+    ]},
+    {"assign": {"loaded_n": "0"}},
+    {"tool": "report.render", "args": {"start": "${start}", "end": "${end}", "use_llm": "${use_llm}"}, "output": "report"},
+    {"assert": "${report.n_eff >= 1}", "message": "有效日数与报告不一致"},
+    {"assert": "${len(report.files) >= 2}", "message": "报告文件不全（md+csv）"}
+  ]
+}
