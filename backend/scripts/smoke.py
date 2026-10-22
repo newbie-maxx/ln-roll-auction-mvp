@@ -7,7 +7,7 @@ import tempfile
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from backend.pipeline import Pipeline  # noqa: E402
 from backend.store import Store  # noqa: E402
