@@ -85,6 +85,12 @@ def retro_register_csv(body: CsvBody) -> dict:
         raise HTTPException(status_code=422, detail=out)
     return out
 
+@router.get("/register/day")
+def retro_register_day(run_date: str) -> list[dict]:
+    """当日登记清单（各键最新 version；只读，登记页「当日已登记高亮」数据源）。"""
+    runner = get_runner()
+    return runner._tool_caller("register.day_list", {"run_date": run_date})
+
 
 @router.post("/register/demo")
 def retro_register_demo(body: ReportBody) -> dict:

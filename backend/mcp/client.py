@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -23,28 +24,30 @@ class McpClient:
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, encoding="utf-8", bufsize=1, cwd=REPO_ROOT)
         self._id = 0
+        self._io_lock = threading.Lock()   # stdio 单管道：请求-响应对必须串行（线程池并发安全）
         self._initialize()
 
     def _send(self, method: str, params: dict | None = None, notify: bool = False) -> dict | None:
-        self._id += 1
-        msg: dict[str, Any] = {"jsonrpc": "2.0", "method": method}
-        if params is not None:
-            msg["params"] = params
-        if not notify:
-            msg["id"] = self._id
-        assert self._proc.stdin and self._proc.stdout
-        self._proc.stdin.write(json.dumps(msg, ensure_ascii=False) + "\n")
-        self._proc.stdin.flush()
-        if notify:
-            return None
-        while True:
-            line = self._proc.stdout.readline()
-            if not line:
-                err = (self._proc.stderr.read() if self._proc.stderr else "") or ""
-                raise ToolError(f"MCP server {self.server_name} 无响应：{err[-500:]}")
-            resp = json.loads(line)
-            if resp.get("id") == self._id:
-                return resp
+        with self._io_lock:
+            self._id += 1
+            msg: dict[str, Any] = {"jsonrpc": "2.0", "method": method}
+            if params is not None:
+                msg["params"] = params
+            if not notify:
+                msg["id"] = self._id
+            assert self._proc.stdin and self._proc.stdout
+            self._proc.stdin.write(json.dumps(msg, ensure_ascii=False) + "\n")
+            self._proc.stdin.flush()
+            if notify:
+                return None
+            while True:
+                line = self._proc.stdout.readline()
+                if not line:
+                    err = (self._proc.stderr.read() if self._proc.stderr else "") or ""
+                    raise ToolError(f"MCP server {self.server_name} 无响应：{err[-500:]}")
+                resp = json.loads(line)
+                if resp.get("id") == self._id:
+                    return resp
 
     def _initialize(self) -> None:
         resp = self._send("initialize", {

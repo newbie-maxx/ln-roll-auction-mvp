@@ -9,6 +9,15 @@ import { GlobalParamsDrawer } from './components/GlobalParamsDrawer'
 import { DataManageDrawer } from './components/DataManageDrawer'
 import { PeriodSlidePanel } from './components/PeriodSlidePanel'
 import { D_DAY as D_DAY_BASE, A_DAY as A_DAY_BASE, useWorkbench } from './store'
+import { RetroReportPage } from './components/retro/RetroReportPage'
+import { TradeRegisterPage } from './components/retro/TradeRegisterPage'
+
+type View = 'workbench' | 'report' | 'register'
+const VIEW_TABS: Array<{ key: View; label: string }> = [
+  { key: 'workbench', label: '决策工作台' },
+  { key: 'report', label: '复盘报告' },
+  { key: 'register', label: '成交登记' },
+]
 import { api, ApiError } from './api/client'
 
 const STEPS = ['边界数据装载', '分布式新能源推断', '相似日检索', '联络线基线', '省间交易总数', '预测联络线', '开机推演与负荷率', '电价预测与落点']
@@ -21,6 +30,7 @@ export default function App() {
   const outputsFreshAt = useWorkbench((s) => s.outputsFreshAt)
   const [paramsOpen, setParamsOpen] = useState(false)
   const [dataOpen, setDataOpen] = useState(false)
+  const [view, setView] = useState<View>('workbench')
   const dayInfo = useWorkbench((s) => s.dayInfo)
   const setTargetDayAction = useWorkbench((s) => s.setTargetDay)
   const D_DAY = dayInfo?.target_day ?? D_DAY_BASE
@@ -46,6 +56,14 @@ export default function App() {
         <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${mode === 'demo' ? 'bg-[#F59E0B]/20 text-[#F59E0B]' : 'bg-[#22C55E]/20 text-[#22C55E]'}`}>
           {mode === 'demo' ? 'demo 数据 · demo 计算' : '实时计算'}
         </span>
+        <nav aria-label="功能视图" className="flex items-center gap-1">
+          {VIEW_TABS.map((t) => (
+            <button key={t.key} onClick={() => setView(t.key)}
+              className={`cursor-pointer rounded px-2.5 py-1 text-[11px] font-semibold transition-colors ${view === t.key ? 'bg-[#3B82F6]/20 text-[#60A5FA]' : 'text-[#94A3B8] hover:bg-[#1A1E2F] hover:text-[#F8FAFC]'}`}>
+              {t.label}
+            </button>
+          ))}
+        </nav>
         <div className="flex items-center gap-1 text-[10px]">
           <span className="rounded bg-[#EF4444]/20 px-1.5 py-0.5 font-semibold text-[#EF4444]">滚撮日 {D_DAY.slice(5)}（预测对象）</span>
           <span className="rounded bg-[#3B82F6]/20 px-1.5 py-0.5 text-[#3B82F6]">A 日 {A_DAY.slice(5)}</span>
@@ -121,24 +139,28 @@ export default function App() {
         </div>
       )}
 
-      {/* 三栏 */}
-      <div className="flex min-h-0 flex-1">
-        <aside className="w-[280px] shrink-0 border-r border-[#334155]">
-          <PeriodNav />
-        </aside>
-        <main ref={mainRef} className={`relative min-w-0 flex-1 p-3 ${paramsOpen || selectedPeriod !== null ? 'overflow-hidden' : 'overflow-y-auto'}`}>
-          <div className="space-y-3">
-            <BoundarySection />
-            <OutputSection />
-          </div>
-          {selectedPeriod !== null && (
-            <PeriodSlidePanel period={selectedPeriod} onClose={() => selectPeriod(null)} />
-          )}
-        </main>
-        <aside className="w-[360px] shrink-0 border-l border-[#334155] max-[1280px]:w-[320px]">
-          <AssistantPanel />
-        </aside>
-      </div>
+      {/* 三栏（决策工作台）/ 复盘两页（M-14）：视图切换 */}
+      {view === 'report' && <RetroReportPage />}
+      {view === 'register' && <TradeRegisterPage />}
+      {view === 'workbench' && (
+        <div className="flex min-h-0 flex-1">
+          <aside className="w-[280px] shrink-0 border-r border-[#334155]">
+            <PeriodNav />
+          </aside>
+          <main ref={mainRef} className={`relative min-w-0 flex-1 p-3 ${paramsOpen || selectedPeriod !== null ? 'overflow-hidden' : 'overflow-y-auto'}`}>
+            <div className="space-y-3">
+              <BoundarySection />
+              <OutputSection />
+            </div>
+            {selectedPeriod !== null && (
+              <PeriodSlidePanel period={selectedPeriod} onClose={() => selectPeriod(null)} />
+            )}
+          </main>
+          <aside className="w-[360px] shrink-0 border-l border-[#334155] max-[1280px]:w-[320px]">
+            <AssistantPanel />
+          </aside>
+        </div>
+      )}
 
       <GlobalParamsDrawer open={paramsOpen} onClose={() => setParamsOpen(false)} />
       <DataManageDrawer open={dataOpen} onClose={() => setDataOpen(false)} />

@@ -150,6 +150,54 @@ TOOLS_SPEC: list[dict] = [
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "retro_status",
+            "description": "复盘数据就绪度：可用日数/起止、登记概况、快照概况（只读）",
+            "parameters": {"type": "object",
+                           "properties": {"start": {"type": "string", "description": "YYYY-MM-DD"},
+                                          "end": {"type": "string", "description": "YYYY-MM-DD"}},
+                           "required": ["start", "end"]},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "retro_generate_report",
+            "description": "生成复盘报告（单日 R1 / 区间 R2；重活 15~60s，返回 report_id、有效日数、"
+                           "图数、sha256 与文件路径；结论请基于报告内容陈述，不得自算数字）",
+            "parameters": {"type": "object",
+                           "properties": {"start": {"type": "string"}, "end": {"type": "string"}},
+                           "required": ["start", "end"]},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "retro_register_trade",
+            "description": "登记成交/报了没成结果（24 点小时粒度、量 MWh、append-only）。"
+                           "全部字段必须由用户明确给出，缺任何字段先向用户确认，禁止推测或代填",
+            "parameters": {"type": "object",
+                           "properties": {"run_date": {"type": "string", "description": "运行日 YYYY-MM-DD"},
+                                          "t": {"type": "integer", "description": "时段 0–23"},
+                                          "result_type": {"type": "string", "enum": ["成交", "未成交"]},
+                                          "direction": {"type": "string", "enum": ["买", "卖"]},
+                                          "price": {"type": "number", "description": "成交价或挂单价（元/MWh）"},
+                                          "volume_mwh": {"type": "number", "description": "电量（MWh）"}},
+                           "required": ["run_date", "t", "result_type", "direction", "price", "volume_mwh"]},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "retro_day_settlement",
+            "description": "查询单日逐笔收益表（逐点结算口径；两行小计分开，不出净额）",
+            "parameters": {"type": "object",
+                           "properties": {"run_date": {"type": "string"}},
+                           "required": ["run_date"]},
+        },
+    },
 ]
 
 
@@ -304,6 +352,49 @@ def build_registry(pipe: Pipeline, get_result: Callable[[], Any]) -> dict[str, C
         from ..api import export_report as api_export
         return api_export()
 
+    # ---- 复盘工具（M-14/§5.4b）：经 skill SOP 编排，LLM 只评审不代拟（护栏沿用） ----
+    def retro_status(args: dict) -> dict:
+        from ..retro.skill_runner import get_runner
+        return get_runner()._tool_caller(
+            "retro.status", {"start": args["start"], "end": args["end"]})
+
+    def retro_generate_report(args: dict) -> dict:
+        """生成复盘报告（重活，15~60s）：R1 单日 / R2 区间，返回留档与文件信息。"""
+        from ..retro.skill_runner import get_runner
+        start, end = args["start"], args["end"]
+        skill = "retro_day" if start == end else "retro_range"
+        out = get_runner().run(skill, {"start": start, "end": end})
+        if out.get("status") != "ok":
+            err = out.get("error") or {}
+            return {"ok": False, "error": f"[{err.get('code')}] {err.get('message')}"}
+        rep = out["outputs"]["report"]
+        return {"ok": True, "report_id": rep["report_id"], "rtype": rep["rtype"],
+                "n_eff": rep["n_eff"], "figs": len(rep["figs"]), "sha256": rep["sha256"],
+                "files": rep["files"],
+                "note": "报告已留档；数字均已过词表与回查双闸。引用结论请读报告内容。"}
+
+    def retro_register_trade(args: dict) -> dict:
+        """登记成交/未成交结果（D-A9，append-only）。铁律：所有字段必须由用户口述给出，
+        缺一字不执行；系统不推测应登记什么（M-03 红线）。"""
+        need = ("run_date", "t", "result_type", "direction", "price", "volume_mwh")
+        missing = [k for k in need if args.get(k) in (None, "")]
+        if missing:
+            return {"ok": False, "error": f"登记字段不全（缺 {','.join(missing)}）；请向用户逐项确认，不得代填"}
+        from ..retro.skill_runner import get_runner
+        out = get_runner().run("trade_register", {k: args[k] for k in need})
+        if out.get("status") != "ok":
+            err = out.get("error") or {}
+            return {"ok": False, "error": f"[{err.get('code')}] {err.get('message')}"}
+        saved = out["outputs"]["saved"]
+        settle = out["outputs"]["settlement"]
+        return {"ok": True, "version": saved["version"], "pnl": saved["pnl"],
+                "totals": settle["totals"],
+                "note": settle["disclaimer"] + "；逐笔收益为逐点结算，缺现货点不出金额"}
+
+    def retro_day_settlement(args: dict) -> dict:
+        from ..retro.skill_runner import get_runner
+        return get_runner()._tool_caller("register.settle_day", {"run_date": args["run_date"]})
+
     return {
         "get_state": get_state,
         "run_chain": run_chain,
@@ -315,6 +406,10 @@ def build_registry(pipe: Pipeline, get_result: Callable[[], Any]) -> dict[str, C
         "explain_period": explain_period,
         "rollback_revision": rollback_revision,
         "export_report": export_report,
+        "retro_status": retro_status,
+        "retro_generate_report": retro_generate_report,
+        "retro_register_trade": retro_register_trade,
+        "retro_day_settlement": retro_day_settlement,
     }
 
 
