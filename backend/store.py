@@ -75,6 +75,7 @@ class Store:
             "VALUES(?,?,?,?,?,?,?,?,?)",
             (boundary_id, run_id, period, boundary_type, value_type, src_day, run_id, value, _now()),
         )
+        self.conn.commit()   # 逐次提交：不落commit会长期持有写锁，锁死跨进程写（复盘 MCP）
 
     # ---------- 修订链（append-only） ----------
     def append_revision(self, boundary_id: str, boundary_type: str, t: int, revised_value: float,
