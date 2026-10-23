@@ -14,26 +14,43 @@ from ..loaders.xlsx_loader import LoadedData, XlsxLoader
 from ..store import Store
 
 _BASE: LoadedData | None = None
-_BASE_DIR: tempfile.TemporaryDirectory | None = None
+_BASE_KEY: tuple | None = None
+
+
+def _base_cache_key() -> tuple:
+    """底账源文件 mtime 键：基线 DA/RT/滚撮 + 全部上传表（任一变化 → 重载）。"""
+    from ..config import DA_XLSX, RT_XLSX, find_roll_file
+    from ..loaders.upload_manager import UploadManager
+    um = UploadManager()
+    files = [DA_XLSX, RT_XLSX, find_roll_file(),
+             *um.sources("day_ahead"), *um.sources("realtime"), *um.sources("roll")]
+    return tuple((str(p), p.stat().st_mtime_ns) for p in files if p is not None and Path(p).exists())
 
 
 def base_data() -> LoadedData:
-    """全量底账（进程内缓存一次；data/ 只读）。"""
-    global _BASE, _BASE_DIR
-    if _BASE is None:
-        loader = XlsxLoader()
+    """全量底账（按源文件 mtime 键控缓存；上传新表自动重载，data/ 只读）。"""
+    global _BASE, _BASE_KEY
+    key = _base_cache_key()
+    if _BASE is None or key != _BASE_KEY:
+        # 与 Pipeline._loader() 同口径：基线 + 全部上传表（后传覆盖同日）
+        from ..loaders.upload_manager import UploadManager
+        um = UploadManager()
+        loader = XlsxLoader(extra_da=tuple(um.sources("day_ahead")),
+                            extra_rt=tuple(um.sources("realtime")),
+                            extra_roll=tuple(um.sources("roll")))
         data = loader.load()
         # 与 Pipeline.loaded() 同口径：补省间交易总量默认项（复用 pipeline 的注入函数）
         from ..pipeline import _inject_inter_total_default
         _inject_inter_total_default(data)
-        _BASE = data
+        _BASE, _BASE_KEY = data, key
     return _BASE
 
 
 def reset_base_cache() -> None:
     """测试用：清底账缓存（上传/换库后）。"""
-    global _BASE
+    global _BASE, _BASE_KEY
     _BASE = None
+    _BASE_KEY = None
 
 
 def work_store_copy(tmpdir: str | Path) -> Store:

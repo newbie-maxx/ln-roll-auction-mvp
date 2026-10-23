@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 
 from ..config import RT_XLSX
 from ..loaders.xlsx_loader import expand24to96, read_sheet
@@ -13,14 +14,31 @@ from . import constants as C
 from .store import RetroStore
 
 
-@lru_cache(maxsize=1)
-def _rt_sheets() -> dict[str, dict[str, list[float | None]]]:
+def _rt_sources() -> tuple[Path, ...]:
+    """实况源文件：基线 RT_XLSX + 全部上传实时表（后传覆盖同日）。"""
+    from ..loaders.upload_manager import UploadManager
+    return (RT_XLSX, *UploadManager().sources("realtime"))
+
+
+def _rt_cache_key() -> tuple:
+    return tuple((str(p), p.stat().st_mtime_ns) for p in _rt_sources() if p.exists())
+
+
+@lru_cache(maxsize=8)
+def _rt_sheets_cached(key: tuple) -> dict[str, dict[str, list[float | None]]]:
     out: dict[str, dict[str, list[float | None]]] = {}
     for sheet in C.RT_RETRO_SHEETS:
-        data = read_sheet(RT_XLSX, sheet)
+        data: dict[str, list[float | None]] = {}
+        for p in _rt_sources():                 # 时间序合并：上传覆盖基线同日
+            data = {**data, **read_sheet(p, sheet)}
         if data:
             out[sheet] = data
     return out
+
+
+def _rt_sheets() -> dict[str, dict[str, list[float | None]]]:
+    """按源文件 mtime 键控缓存（上传新表后自动重读，无需重启进程）。"""
+    return _rt_sheets_cached(_rt_cache_key())
 
 
 def _validate(item: str, v: float | None) -> tuple[float | None, bool]:
