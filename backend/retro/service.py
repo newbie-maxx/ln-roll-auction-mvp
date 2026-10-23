@@ -103,6 +103,10 @@ def generate(start: str, end: str, retro: RetroStore, real_store: Store,
         raise ValueError("起止日须满足 start ≤ end")
     days = availability(start, end)
     if not days:
+        from .actual import _rt_sheets
+        rt_last = max(_rt_sheets().get("实时电价", {}).keys(), default="")
+        if rt_last and start > rt_last:
+            raise ValueError(f"该区间尚无实况（最晚实况日 {rt_last}）：未来交付日为前瞻预测，T+1 实况到位后才能复盘")
         raise ValueError("区间内无有效日（实况 8 类不齐或无实时电价）")
     if len(days) > 180:
         raise ValueError("区间超上限 180 天，请改用明细导出")

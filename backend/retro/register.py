@@ -35,6 +35,8 @@ def validate(record: dict) -> list[str]:
     if td is not None:
         if not _valid_date(str(td)):
             errs.append("交易日（场次）须为 YYYY-MM-DD")
+        elif str(td) > date.today().isoformat():
+            errs.append("交易日（场次）不能晚于今天（交易日是已发生的日历日）")
         elif _valid_date(str(record.get("run_date", ""))) and str(td) >= str(record["run_date"]):
             errs.append("交易日（场次）须早于运行日（交付日在交易之后）")
     if not _valid_date(str(record.get("run_date", ""))):

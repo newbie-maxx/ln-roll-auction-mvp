@@ -214,11 +214,15 @@ export function mdChapterToHtml(md: string, figBase: string): string {
 
 /** 交易日（场次）候选：运行日前 1–7 个日历日，近的在前（交付日在交易之后）。
  *  登记页默认「自动」（最新生效场次）；显式选择用于历史/无快照场景。 */
-export function tradingSessionCandidates(runDate: string): string[] {
-  if (!isIsoDate(runDate)) return []
-  const [y, m, d] = runDate.split('-').map(Number)
+export function tradingSessionCandidates(runDate: string, today: string = runDate): string[] {
+  if (!isIsoDate(runDate) || !isIsoDate(today)) return []
+  // 起点 = min(运行日前一天, 今天)：交易日必须是已发生的日历日
+  const startIso = runDate <= today
+    ? (() => { const [y, m, d] = runDate.split('-').map(Number); const dt = new Date(y, m - 1, d - 1); return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}` })()
+    : today
+  const [y, m, d] = startIso.split('-').map(Number)
   const out: string[] = []
-  for (let k = 1; k <= 7; k++) {
+  for (let k = 0; k < 7; k++) {
     const dt = new Date(y, m - 1, d - k)
     out.push(`${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`)
   }

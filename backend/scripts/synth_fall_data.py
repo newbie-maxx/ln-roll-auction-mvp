@@ -13,7 +13,8 @@
 - 实时侧相对日前再叠加 ±3%（披露差异）；实时开机 = 日前开机（与 8 月同口径：系统输出复制品）
 
 用法：
-  python3 backend/scripts/synth_fall_data.py --out /tmp/synth --start 2026-09-01 --end 2026-10-22
+  python3 backend/scripts/synth_fall_data.py --start 2026-09-01 --end 2026-10-27 --rt-end 2026-10-22
+  （DA/滚撮含未来交付日，支持选择 D+2..D+4 滚撮；实时实况只到 rt-end）
 """
 from __future__ import annotations
 
@@ -90,10 +91,12 @@ def _write_sheet(ws, header: list[str], days: list[date], rows: list[list[float 
         ws.append([d] + list(vals))
 
 
-def build(out_dir: Path, start: str, end: str) -> dict:
+def build(out_dir: Path, start: str, end: str, rt_end: str | None = None) -> dict:
+    """DA/滚撮覆盖 [start, end]（含未来交付日的前瞻披露）；RT 只覆盖 [start, rt_end]（实况仅过去日）。"""
     out_dir.mkdir(parents=True, exist_ok=True)
     s0, e0 = date.fromisoformat(start), date.fromisoformat(end)
     days = [s0 + timedelta(days=i) for i in range((e0 - s0).days + 1)]
+    rt_days = [d for d in days if d <= date.fromisoformat(rt_end)] if rt_end else list(days)
     aug_days = sorted(read_sheet(DA_XLSX, "负荷").keys())
     if len(aug_days) < 31:
         raise RuntimeError("8 月基线不足 31 天")
@@ -117,7 +120,8 @@ def build(out_dir: Path, start: str, end: str) -> dict:
                 vals = _scale(src, sheet, k, f"da:{iso}", 0.02, lo=0.0)
             da_rows[sheet].append(vals)
 
-        for sheet in RT_SYNTH_SHEETS:
+        rt_has_day = d <= (rt_days[-1] if rt_days else e0)   # 未来交付日：无实时实况（RT 行不写）
+        for sheet in (RT_SYNTH_SHEETS if rt_has_day else ()):
             src = read_sheet(RT_XLSX, sheet).get(base_day) or []
             if sheet == "实时电价":
                 # 以 8 月「实时电价」基准日形态演化：保留负价/尖峰结构（日前价与之独立演化）
@@ -144,20 +148,24 @@ def build(out_dir: Path, start: str, end: str) -> dict:
             p24 = [None if v is None else v for v in (rb.get("price24") or [None] * 24)]
             roll_price.append([None if v is None else round(v + rng.uniform(-8.0, 8.0), 2) for v in p24])
 
-    def _save(path: Path, sheets: dict[str, list[list[float | None]]], ncol: dict[str, int]) -> Path:
+    def _save(path: Path, sheets: dict[str, list[list[float | None]]], ncol: dict[str, int],
+              days_override: list[date] | None = None) -> Path:
         wb = openpyxl.Workbook()
         wb.remove(wb.active)
+        use_days = days_override or days
         for sheet, rows in sheets.items():
             ws = wb.create_sheet(sheet)
             n = ncol.get(sheet, 96)
-            _write_sheet(ws, ["日期"] + [f"t{i+1}" for i in range(n)], days, rows)
+            _write_sheet(ws, ["日期"] + [f"t{i+1}" for i in range(n)], use_days, rows)
         wb.save(path)
         return path
 
-    da_path = _save(out_dir / "day_ahead.xlsx", da_rows,
-                    {s: 24 for s in SHEETS_24})
-    rt_path = _save(out_dir / "realtime.xlsx", rt_rows,
-                    {s: 24 for s in SHEETS_24})
+    da_path = _save(out_dir / "day_ahead.xlsx", da_rows, {s: 24 for s in SHEETS_24})
+    # 实时表只含实况已终态日（跳过未来交付日）
+    rt_days_list = [d for d in days if d <= (rt_days[-1] if rt_days else e0)]
+    rt_trimmed = {k: v[:len(rt_days_list)] for k, v in rt_rows.items()}
+    rt_path = _save(out_dir / "realtime.xlsx", rt_trimmed, {s: 24 for s in SHEETS_24},
+                    days_override=rt_days_list)
     roll_path = _save(out_dir / "roll.xlsx",
                       {"成交量": roll_vol, "价格": roll_price}, {"成交量": 24, "价格": 24})
     return {"days": [d.isoformat() for d in days], "files": [str(da_path), str(rt_path), str(roll_path)]}
@@ -167,10 +175,11 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="/tmp/synth")
     ap.add_argument("--start", default="2026-09-01")
-    ap.add_argument("--end", default="2026-10-22")
+    ap.add_argument("--end", default="2026-10-27", help="日前/滚撮截止日（含未来交付日）")
+    ap.add_argument("--rt-end", default="2026-10-22", help="实时实况截止日（不含未来日）")
     a = ap.parse_args()
-    res = build(Path(a.out), a.start, a.end)
-    print(f"合成 {len(res['days'])} 天（{res['days'][0]} ~ {res['days'][-1]}）：")
+    res = build(Path(a.out), a.start, a.end, a.rt_end)
+    print(f"合成 {len(res['days'])} 天（{res['days'][0]} ~ {res['days'][-1]}；实况截至 {a.rt_end}）：")
     for f in res["files"]:
         print(" ", f)
     return 0

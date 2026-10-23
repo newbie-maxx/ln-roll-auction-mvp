@@ -105,7 +105,7 @@ export function TradeRegisterPage() {
           <select value={tradeDate} onChange={(e) => setTradeDate(e.target.value)}
             className="w-40 rounded border border-[#334155] bg-[#020617] px-2 py-1 text-xs text-[#F8FAFC]">
             <option value="">自动（最新生效场次）</option>
-            {tradingSessionCandidates(runDate).map((d) => <option key={d} value={d}>{d.slice(5)}</option>)}
+            {tradingSessionCandidates(runDate, todayIso()).map((d) => <option key={d} value={d}>{d.slice(5)}</option>)}
           </select>
         </label>
         <label className="flex flex-col gap-1 text-[10px] text-[#94A3B8]">时段（0–23 时）

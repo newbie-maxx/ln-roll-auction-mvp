@@ -117,11 +117,17 @@ describe('章节正文渲染（图片/表格/转义）', () => {
 })
 
 describe('交易日（场次）候选', () => {
-  it('运行日前 1–7 个日历日、近的在前；非法日期为空', () => {
-    expect(tradingSessionCandidates('2026-10-23')).toEqual([
+  it('历史运行日：从运行日前一天起往前 7 个日历日、近的在前', () => {
+    expect(tradingSessionCandidates('2026-10-23', '2026-10-23')).toEqual([
       '2026-10-22', '2026-10-21', '2026-10-20', '2026-10-19', '2026-10-18', '2026-10-17', '2026-10-16',
     ])
-    expect(tradingSessionCandidates('2026-10-01').slice(0, 2)).toEqual(['2026-09-30', '2026-09-29'])
+    expect(tradingSessionCandidates('2026-10-01', '2026-10-23').slice(0, 2)).toEqual(['2026-09-30', '2026-09-29'])
     expect(tradingSessionCandidates('bad')).toEqual([])
+  })
+  it('未来交付日（今天 10-23、运行日 10-25/27）：交易日从今天起往前，不含未来日', () => {
+    expect(tradingSessionCandidates('2026-10-25', '2026-10-23')).toEqual([
+      '2026-10-23', '2026-10-22', '2026-10-21', '2026-10-20', '2026-10-19', '2026-10-18', '2026-10-17',
+    ])
+    expect(tradingSessionCandidates('2026-10-27', '2026-10-23')[0]).toBe('2026-10-23')
   })
 })
