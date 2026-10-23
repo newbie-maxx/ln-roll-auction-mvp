@@ -15,9 +15,7 @@ export function AssistantPanel() {
   const llmInfo = useWorkbench((s) => s.llmInfo)
   const initLive = useWorkbench((s) => s.initLive)
   const chatBusy = useWorkbench((s) => s.chatBusy)
-  const [msgs, setMsgs] = useState<Msg[]>([
-    { role: 'assistant', text: '我是滚搓交易决策助手。仅评审不代拟、不产可申报数值；确定性计算在 Python 工具内执行，我只引用工具返回数值。' },
-  ])
+  const [msgs, setMsgs] = useState<Msg[]>([])
   const [input, setInput] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [cfg, setCfg] = useState({ baseUrl: '', apiKey: '', model: '' })
@@ -182,7 +180,14 @@ export function AssistantPanel() {
             发送
           </button>
         </div>
-        <div className="text-[10px] text-[#94A3B8]">护栏 G4：只评审不代拟、不产可申报数值｜每轮快照留痕于 chat_log</div>
+        <div className="text-[10px] leading-4 text-[#64748B]">
+          <span className="font-semibold text-[#94A3B8]">我能做什么（直接用自然语言说）：</span>
+          <br />· 问价：「解释 10 时段预测电价依据」「看落点概率/灰度评估」
+          <br />· 改数：「把 10 时段负荷调到 46000」（会先复述并要你给理由）
+          <br />· 查数：「当前工作台状态」「检索相似运行日」「看 M7 开机明细」
+          <br />· 复盘：「查 8 月复盘数据就绪度」「生成 2026-08-14 的复盘报告」
+          <br />· 登记：「登记一笔：8 月 14 日 15 时，卖，成交，283 元，80 兆瓦时」「查 8-14 逐笔收益」
+        </div>
       </div>
     </div>
   )
