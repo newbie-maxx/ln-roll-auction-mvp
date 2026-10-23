@@ -15,12 +15,10 @@ import { TradeRegisterPage } from './components/retro/TradeRegisterPage'
 type View = 'workbench' | 'report' | 'register'
 const VIEW_TABS: Array<{ key: View; label: string }> = [
   { key: 'workbench', label: '决策工作台' },
-  { key: 'report', label: '复盘报告' },
   { key: 'register', label: '成交登记' },
+  { key: 'report', label: '复盘报告' },
 ]
 import { api, ApiError } from './api/client'
-
-const STEPS = ['边界数据装载', '分布式新能源推断', '相似日检索', '联络线基线', '省间交易总数', '预测联络线', '开机推演与负荷率', '电价预测与落点']
 
 export default function App() {
   const selectedPeriod = useWorkbench((s) => s.selectedPeriod)
@@ -59,7 +57,7 @@ export default function App() {
         <nav aria-label="功能视图" className="flex items-center gap-1">
           {VIEW_TABS.map((t) => (
             <button key={t.key} onClick={() => setView(t.key)}
-              className={`cursor-pointer rounded px-2.5 py-1 text-[11px] font-semibold transition-colors ${view === t.key ? 'bg-[#3B82F6]/20 text-[#60A5FA]' : 'text-[#94A3B8] hover:bg-[#1A1E2F] hover:text-[#F8FAFC]'}`}>
+              className={`cursor-pointer rounded-md px-4 py-1.5 text-sm font-bold tracking-wide transition-colors ${view === t.key ? 'bg-[#3B82F6]/25 text-[#93C5FD] shadow-[inset_0_-2px_0_#3B82F6]' : 'text-[#94A3B8] hover:bg-[#1A1E2F] hover:text-[#F8FAFC]'}`}>
               {t.label}
             </button>
           ))}
@@ -79,14 +77,6 @@ export default function App() {
             ))}
           </select>
         </div>
-        <nav className="ml-2 hidden flex-1 items-center gap-0.5 xl:flex">
-          {STEPS.map((s, i) => (
-            <span key={s} className="flex items-center" title={`M${i + 1}（PRD §6 模块编号）`}>
-              <span className="rounded bg-[#1A1E2F] px-1.5 py-0.5 text-[10px] text-[#94A3B8]">{s}</span>
-              {i < STEPS.length - 1 && <span className="text-[#334155]">→</span>}
-            </span>
-          ))}
-        </nav>
         <div className="ml-auto flex items-center gap-2">
           <span className="hidden text-[10px] text-[#94A3B8] lg:inline">修订 {revisions.length} 条 · 输出刷新 {outputsFreshAt.slice(11, 19)}</span>
           <button
