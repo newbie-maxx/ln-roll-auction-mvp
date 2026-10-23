@@ -1,7 +1,7 @@
 /** M-14 复盘前端口径用例：日期门/快捷区间、登记 6 条校验、CSV 整批拒绝、章节切分与 CSV 转换。 */
 import { describe, expect, it } from 'vitest'
 import {
-  canGenerate, daysBetween, isIsoDate, mdChapterToHtml, mdTablesToCsv, parseRegisterCsv, quickRange,
+  canGenerate, daysBetween, isIsoDate, mdChapterToHtml, mdTablesToCsv, tradingSessionCandidates, parseRegisterCsv, quickRange,
   rangeError, splitChapters, validateRegister, type RegisterDraft,
 } from './logic'
 
@@ -113,5 +113,15 @@ describe('章节正文渲染（图片/表格/转义）', () => {
     if (html.includes('<strong>G-01') !== true) throw new Error('bold')
     if (html.includes('<x>') !== false || html.includes('&lt;x&gt;') !== true) throw new Error('escape')
     if (html.includes('---') !== false) throw new Error('sep row leaked')
+  })
+})
+
+describe('交易日（场次）候选', () => {
+  it('运行日前 1–7 个日历日、近的在前；非法日期为空', () => {
+    expect(tradingSessionCandidates('2026-10-23')).toEqual([
+      '2026-10-22', '2026-10-21', '2026-10-20', '2026-10-19', '2026-10-18', '2026-10-17', '2026-10-16',
+    ])
+    expect(tradingSessionCandidates('2026-10-01').slice(0, 2)).toEqual(['2026-09-30', '2026-09-29'])
+    expect(tradingSessionCandidates('bad')).toEqual([])
   })
 })

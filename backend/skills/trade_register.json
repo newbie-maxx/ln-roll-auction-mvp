@@ -5,28 +5,95 @@
   "status": "active",
   "owner": "retro",
   "inputs": {
-    "run_date": {"type": "string", "required": true},
-    "t": {"type": "number", "required": true},
-    "result_type": {"type": "string", "required": true},
-    "direction": {"type": "string", "required": true},
-    "price": {"type": "number", "required": true},
-    "volume_mwh": {"type": "number", "required": true},
-    "note": {"type": "string", "required": false}
+    "run_date": {
+      "type": "string",
+      "required": true
+    },
+    "t": {
+      "type": "number",
+      "required": true
+    },
+    "result_type": {
+      "type": "string",
+      "required": true
+    },
+    "direction": {
+      "type": "string",
+      "required": true
+    },
+    "price": {
+      "type": "number",
+      "required": true
+    },
+    "volume_mwh": {
+      "type": "number",
+      "required": true
+    },
+    "note": {
+      "type": "string",
+      "required": false
+    },
+    "trade_date": {
+      "type": "string",
+      "required": false
+    }
   },
-  "returns": ["saved", "settlement"],
+  "returns": [
+    "saved",
+    "settlement"
+  ],
   "steps": [
-    {"tool": "register.validate", "args": {"record": {
-      "run_date": "${run_date}", "t": "${t}", "result_type": "${result_type}",
-      "direction": "${direction}", "price": "${price}", "volume_mwh": "${volume_mwh}"}},
-     "output": "check"},
-    {"if": "${len(check.errors) > 0}", "then": [
-      {"fail": {"code": "INVALID_RECORD", "message": "录入口径校验未过"}}
-    ]},
-    {"tool": "register.save", "args": {"record": {
-      "run_date": "${run_date}", "t": "${t}", "result_type": "${result_type}",
-      "direction": "${direction}", "price": "${price}", "volume_mwh": "${volume_mwh}"}},
-     "output": "saved"},
-    {"tool": "register.settle_day", "args": {"run_date": "${run_date}"}, "output": "settlement"},
-    {"assert": "${saved.ok == true}", "message": "登记保存失败"}
+    {
+      "tool": "register.validate",
+      "args": {
+        "record": {
+          "run_date": "${run_date}",
+          "t": "${t}",
+          "result_type": "${result_type}",
+          "direction": "${direction}",
+          "price": "${price}",
+          "volume_mwh": "${volume_mwh}",
+          "trade_date": "${trade_date}"
+        }
+      },
+      "output": "check"
+    },
+    {
+      "if": "${len(check.errors) > 0}",
+      "then": [
+        {
+          "fail": {
+            "code": "INVALID_RECORD",
+            "message": "录入口径校验未过"
+          }
+        }
+      ]
+    },
+    {
+      "tool": "register.save",
+      "args": {
+        "record": {
+          "run_date": "${run_date}",
+          "t": "${t}",
+          "result_type": "${result_type}",
+          "direction": "${direction}",
+          "price": "${price}",
+          "volume_mwh": "${volume_mwh}",
+          "trade_date": "${trade_date}"
+        }
+      },
+      "output": "saved"
+    },
+    {
+      "tool": "register.settle_day",
+      "args": {
+        "run_date": "${run_date}"
+      },
+      "output": "settlement"
+    },
+    {
+      "assert": "${saved.ok == true}",
+      "message": "登记保存失败"
+    }
   ]
 }

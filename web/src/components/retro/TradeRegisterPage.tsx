@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ApiError } from '../../api/client'
 import { retroApi, type RegisterRecord, type SettleTotals } from '../../api/retro'
-import { DIRECTIONS, RESULT_TYPES, validateRegister, type RegisterDraft } from '../../retro/logic'
+import { DIRECTIONS, RESULT_TYPES, tradingSessionCandidates, validateRegister, type RegisterDraft } from '../../retro/logic'
 
 function todayIso(): string {
   const d = new Date()
@@ -20,6 +20,7 @@ export function TradeRegisterPage() {
   const [draft, setDraft] = useState<RegisterDraft>({
     run_date: runDate, t: 10, result_type: '成交', direction: '卖', price: 342, volume_mwh: 120,
   })
+  const [tradeDate, setTradeDate] = useState('')   // '' = 自动（最新生效场次）
   const draftErrors = useMemo(() => validateRegister({ ...draft, run_date: runDate }), [draft, runDate])
 
   const refresh = useCallback(async (date: string) => {
@@ -50,7 +51,10 @@ export function TradeRegisterPage() {
     if (draftErrors.length > 0) return
     setBusy(true)
     try {
-      const out = await retroApi.register({ ...draft, run_date: runDate, t: draft.t ?? 0, price: draft.price ?? 0, volume_mwh: draft.volume_mwh ?? 0 })
+      const out = await retroApi.register({
+        ...draft, run_date: runDate, t: draft.t ?? 0, price: draft.price ?? 0, volume_mwh: draft.volume_mwh ?? 0,
+        ...(tradeDate ? { trade_date: tradeDate } : {}),
+      })
       setTotals(out.settlement.totals)
       setNote(`已登记（v${out.saved.version}${out.saved.is_revision ? '，修订' : ''}），逐笔收益 ${out.saved.pnl ?? '不出金额（现货缺点）'} 元`)
       await refresh(runDate)
@@ -97,6 +101,13 @@ export function TradeRegisterPage() {
 
       {/* 新增表单 */}
       <div className="flex flex-wrap items-end gap-2 rounded border border-[#334155] bg-[#0E1223] p-3">
+        <label className="flex flex-col gap-1 text-[10px] text-[#94A3B8]">交易日（场次）
+          <select value={tradeDate} onChange={(e) => setTradeDate(e.target.value)}
+            className="w-40 rounded border border-[#334155] bg-[#020617] px-2 py-1 text-xs text-[#F8FAFC]">
+            <option value="">自动（最新生效场次）</option>
+            {tradingSessionCandidates(runDate).map((d) => <option key={d} value={d}>{d.slice(5)}</option>)}
+          </select>
+        </label>
         <label className="flex flex-col gap-1 text-[10px] text-[#94A3B8]">时段（0–23 时）
           <select value={draft.t ?? ''} onChange={(e) => setDraft({ ...draft, t: Number(e.target.value) })}
             className="w-24 rounded border border-[#334155] bg-[#020617] px-2 py-1 text-xs text-[#F8FAFC]">

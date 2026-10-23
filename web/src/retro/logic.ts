@@ -211,3 +211,16 @@ export function mdChapterToHtml(md: string, figBase: string): string {
   flushTable()
   return out.filter((x, i, a) => !(x === '' && a[i - 1] === '')).join('\n')
 }
+
+/** 交易日（场次）候选：运行日前 1–7 个日历日，近的在前（交付日在交易之后）。
+ *  登记页默认「自动」（最新生效场次）；显式选择用于历史/无快照场景。 */
+export function tradingSessionCandidates(runDate: string): string[] {
+  if (!isIsoDate(runDate)) return []
+  const [y, m, d] = runDate.split('-').map(Number)
+  const out: string[] = []
+  for (let k = 1; k <= 7; k++) {
+    const dt = new Date(y, m - 1, d - k)
+    out.push(`${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`)
+  }
+  return out
+}

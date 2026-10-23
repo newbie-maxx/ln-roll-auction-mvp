@@ -31,6 +31,7 @@ class RegisterBody(BaseModel):
     price: float
     volume_mwh: float
     note: str | None = None
+    trade_date: str | None = None   # 交易日（场次）：显式指定；缺省=自动取最新生效场次
 
 
 class CsvBody(BaseModel):

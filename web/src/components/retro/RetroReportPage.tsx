@@ -157,10 +157,14 @@ export function RetroReportPage() {
             <div
               className="md-report min-h-0 flex-1 overflow-auto px-4 py-3 text-[11px] leading-5 text-[#CBD5E1]"
               dangerouslySetInnerHTML={{
-                __html: mdChapterToHtml(
-                  chapters.chapters[chapterIdx]?.body ?? '',
-                  `/api/retro/reports/${detail.report_id}/figs`,
-                ),
+                __html:
+                  (chapterIdx === 0 && chapters.head
+                    ? mdChapterToHtml(chapters.head, `/api/retro/reports/${detail.report_id}/figs`) + '<hr/>'
+                    : '') +
+                  mdChapterToHtml(
+                    chapters.chapters[chapterIdx]?.body ?? '',
+                    `/api/retro/reports/${detail.report_id}/figs`,
+                  ),
               }}
             />
           ) : (

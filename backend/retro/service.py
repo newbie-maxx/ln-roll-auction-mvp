@@ -58,9 +58,22 @@ def build_day_context(run_date: str, retro: RetroStore, real_store: Store,
         cur = bands.get(r["t"])
         bands[r["t"]] = ("filled" if r["result_type"] == "成交" else
                          ("unfilled" if cur != "filled" else cur))
+    # 交易日（场次）口径（§1.7.7）：live 快照场次 ∪ 登记关联场次；多场次时给版本线数据（S7）
+    live_sessions = retro.snapshot_sessions(run_date, source="live")
+    reg_sessions = sorted({r["snapshot_trade_date"] for r in st["rows"] if r.get("snapshot_trade_date")})
+    all_sessions = sorted(set(live_sessions) | set(reg_sessions))
+    session_lines = []
+    if len(live_sessions) > 1:
+        for td in live_sessions:
+            ln = retro.snapshot_by_session(run_date, td, "final", source="live")
+            if ln:
+                session_lines.append({"trade_date": td, "final": ln["values"]})
     return {
         "run_date": run_date, "theta": theta, "delta": delta_result, "dec": dec,
         "jump": jump_result, "focus": focus_result, "portrait": split,
+        "live_sessions": live_sessions, "sessions": all_sessions,
+        "session_lines": session_lines,
+        "base_trade_date": snap["_meta"].get("trade_date"),
         "compensate": comp, "register": st, "register_ts": sorted(bands),
         "bands_by_hour": bands, "revisions": revs,
         "snapshot": {k: (snap[k]["values"] if snap.get(k) else [None] * 96)

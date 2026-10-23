@@ -107,7 +107,7 @@ export interface SkillInfo {
 export const retroApi = {
   status: (start: string, end: string) =>
     retroRequest<RetroStatus>(`/api/retro/status?start=${start}&end=${end}`),
-  register: (rec: { run_date: string; t: number; result_type: string; direction: string; price: number; volume_mwh: number; note?: string }) =>
+  register: (rec: { run_date: string; t: number; result_type: string; direction: string; price: number; volume_mwh: number; note?: string; trade_date?: string }) =>
     retroRequest<RegisterSaveResult>('/api/retro/register', {
       method: 'POST',
       body: JSON.stringify(rec),

@@ -210,3 +210,32 @@ def test_skill_runner_end_to_end(tmp_path, monkeypatch):
         assert bad["error"]["code"] == "ASSERT_FAILED"
     finally:
         runner.close()
+
+
+def test_register_explicit_trade_date(env):
+    """交易日（场次）显式指定：落 D-A9 snapshot_trade_date；晚于运行日拒绝。"""
+    rec = {"run_date": "2026-08-23", "t": 10, "result_type": "成交", "direction": "卖",
+           "price": 342.0, "volume_mwh": 120.0, "trade_date": "2026-08-19"}
+    out = reg_mod.save(rec, env["retro"])
+    assert out["ok"] and out["snapshot_trade_date"] == "2026-08-19"
+    rows = reg_mod.day_records("2026-08-23", env["retro"])
+    assert rows[0]["snapshot_trade_date"] == "2026-08-19"
+    bad = reg_mod.save({**rec, "trade_date": "2026-08-23"}, env["retro"])
+    assert not bad["ok"] and any("早于运行日" in e for e in bad["errors"])
+
+
+def test_report_session_header_and_version_lines(env):
+    """多场次（S1/S4/S7）：两场 live 快照 → 表头列场次与生效场次，电价图叠版本线。"""
+    from backend.retro.snapshot import capture as snap_capture
+    from backend.retro import report as report_mod
+    snap_capture("2026-08-23", env["retro"], trade_date="2026-08-19", work_db=env["tmp"] / "s1.db")
+    snap_capture("2026-08-23", env["retro"], trade_date="2026-08-21", work_db=env["tmp"] / "s2.db")
+    reg_mod.save({"run_date": "2026-08-23", "t": 10, "result_type": "成交", "direction": "卖",
+                  "price": 342.0, "volume_mwh": 120.0, "trade_date": "2026-08-21"}, env["retro"])
+    out = service.generate("2026-08-23", "2026-08-23", env["retro"], env["real"], use_llm=False)
+    md = Path(out["files"][0]).read_text(encoding="utf-8")
+    assert "交易日（场次）" in md and "2026-08-19" in md and "2026-08-21" in md
+    assert "生效场次（总账基准）" in md and "2026-08-21" in md   # 离运行日最近
+    assert "第1场(2026-08-19)" in md and "第2场(2026-08-21)" in md  # 版本线图注
+    # 逐笔表场次列
+    assert "2026-08-21" in md

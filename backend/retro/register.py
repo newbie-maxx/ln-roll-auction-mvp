@@ -29,8 +29,14 @@ def _valid_date(s: str) -> bool:
 
 
 def validate(record: dict) -> list[str]:
-    """录入口径校验 6 条；返回错误列表（空=通过）。"""
+    """录入口径校验（6 条 + 可选交易日场次）；返回错误列表（空=通过）。"""
     errs: list[str] = []
+    td = record.get("trade_date")
+    if td is not None:
+        if not _valid_date(str(td)):
+            errs.append("交易日（场次）须为 YYYY-MM-DD")
+        elif _valid_date(str(record.get("run_date", ""))) and str(td) >= str(record["run_date"]):
+            errs.append("交易日（场次）须早于运行日（交付日在交易之后）")
     if not _valid_date(str(record.get("run_date", ""))):
         errs.append("运行日无效（须 YYYY-MM-DD）")
     t = record.get("t")
@@ -85,12 +91,12 @@ def save(record: dict, store: RetroStore, trader_id: str = "default") -> dict:
         "entered_at": record.get("entered_at") or now_iso(), "note": record.get("note"),
         "source": record.get("source", "自报"),
         "confidence": record.get("confidence", "低于回单"),
-        "snapshot_trade_date": store.latest_effective_trade_date(run_date),
+        "snapshot_trade_date": record.get("trade_date") or store.latest_effective_trade_date(run_date),
         "settle_points": json.dumps(s["settle_points"], ensure_ascii=False),
         "pnl": s["pnl"], "version": version})
     return {"ok": True, "version": version, "pnl": s["pnl"],
             "is_revision": version > 1,
-            "snapshot_trade_date": store.latest_effective_trade_date(run_date)}
+            "snapshot_trade_date": record.get("trade_date") or store.latest_effective_trade_date(run_date)}
 
 
 def import_csv(text: str, store: RetroStore, trader_id: str = "default") -> dict:

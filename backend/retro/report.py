@@ -121,6 +121,14 @@ def chart_specs(day: dict, multi: list[dict] | None = None) -> list[dict]:
     ]
     floor_ts = [i + 1 for i, p in enumerate(tb["电价"]["v_act"])
                 if p is not None and p <= C.SPOT_FLOOR + 1e-9]
+    # S7：多场次运行图——各场次生效版叠加版本线（第N场(ISO日期)，图注自动列出）
+    session_lines = day.get("session_lines") or []
+    if session_lines and not multi:
+        for s in specs:
+            if s["id"] in ("G-04", "G-07", "G-09", "G-12"):
+                for i, ln in enumerate(session_lines, 1):
+                    iso = ln["trade_date"]
+                    s["series"].append((f"第{i}场({iso})", ln["final"]))
     for s in specs:
         s["vlines"] = floor_ts if s["id"] == "G-12" else None
         s["bands"] = reg_ts if not multi else None
@@ -184,6 +192,13 @@ def render_single(day: dict, fig_dir: Path, ai_text: str = "",
     md.append(f"| 项 | 内容 |\n| --- | --- |\n| 运行日 | {day['run_date']}（全天 96 个时段） |")
     replay = "（该日预测线为**重放值，非当时值**）" if day["delta"]["is_replay"] else ""
     md.append(f"| 预测来源 | {day['delta']['pred_source']}{replay} |")
+    sessions = day.get("sessions") or []
+    base_td = day.get("base_trade_date")
+    md.append("| 交易日（场次） | " + (
+        "、".join(sessions) if sessions else "该日无场次快照/登记") + " |")
+    md.append("| 生效场次（总账基准） | " + (
+        f"{base_td}（离运行日最近的交易日生效快照）" if base_td
+        else "无 live 快照，预测线为重放值") + " |")
     md.append(f"| 生成人 | default　生成时间 {day.get('generated_at', '')} |")
     md.append(f"| 模板 | 单日复盘模板 v2.3（12 图；逐点结算口径） |\n")
 

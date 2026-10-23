@@ -285,6 +285,26 @@ class RetroStore:
             "source": row["source"],
         }
 
+    def snapshot_by_session(self, run_date: str, trade_date: str, item: str,
+                            source: str = "live") -> dict | None:
+        """取指定场次（trade_date）生效快照该 item 的 96 点（S5 逐笔解释/版本线用）。"""
+        row = self.conn.execute(
+            "SELECT * FROM calc_snapshot WHERE run_date = ? AND trade_date = ? AND item = ? "
+            "AND source = ? AND effective = 1 ORDER BY seq DESC, t LIMIT 1",
+            (run_date, trade_date, item, source)).fetchone()
+        if row is None:
+            return None
+        pts = self.conn.execute(
+            "SELECT t, value FROM calc_snapshot WHERE run_date = ? AND trade_date = ? "
+            "AND item = ? AND source = ? AND effective = 1 ORDER BY seq DESC, t",
+            (run_date, trade_date, item, source)).fetchall()
+        seen: dict[int, float | None] = {}
+        for p_ in pts:
+            seen.setdefault(p_["t"], p_["value"])
+        return {"trade_date": trade_date, "seq": row["seq"],
+                "values": [seen.get(t) for t in range(1, 97)],
+                "params_json": row["params_json"], "code_version": row["code_version"]}
+
     def snapshot_sessions(self, run_date: str, source: str = "live") -> list[str]:
         rows = self.conn.execute(
             "SELECT DISTINCT trade_date FROM calc_snapshot WHERE run_date = ? AND source = ? "
