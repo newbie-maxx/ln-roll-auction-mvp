@@ -146,6 +146,19 @@ def retro_report_detail(report_id: str) -> dict:
             content = p.read_text(encoding="utf-8")
     return {**row, "content": content}
 
+@router.get("/reports/{report_id}/figs/{name}")
+def retro_report_fig(report_id: str, name: str):
+    """报告配图（只读；路径白名单：report_id 无分隔符、仅 .png，防穿越）。"""
+    from fastapi.responses import FileResponse
+    from .config import EXPORT_DIR
+    if not name.endswith(".png") or "/" in name or ".." in name \
+            or "/" in report_id or ".." in report_id:
+        raise HTTPException(status_code=404, detail="图片不存在")
+    p = EXPORT_DIR / "retro" / report_id / "figs" / name
+    if not p.exists():
+        raise HTTPException(status_code=404, detail="图片不存在")
+    return FileResponse(str(p), media_type="image/png")
+
 
 # ---- skill 生命周期与热加载（skills 管理面） ----
 @router.get("/skills")

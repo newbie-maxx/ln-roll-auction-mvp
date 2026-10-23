@@ -73,3 +73,12 @@ button:disabled {
 *::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 4px; }
 *::-webkit-scrollbar-thumb:hover { background: #475569; }
 *::-webkit-scrollbar-track { background: transparent; }
+
+/* 复盘报告预览：轻量 markdown 渲染样式 */
+.md-report img { max-width: 100%; border: 1px solid #334155; border-radius: 4px; margin: 6px 0; display: block; }
+.md-report table { border-collapse: collapse; margin: 6px 0; width: 100%; }
+.md-report th, .md-report td { border: 1px solid #1E293B; padding: 2px 6px; text-align: left; white-space: nowrap; }
+.md-report th { background: #0E1223; color: #94A3B8; font-weight: 600; }
+.md-report blockquote { border-left: 3px solid #334155; margin: 4px 0; padding: 2px 8px; color: #94A3B8; }
+.md-report h4, .md-report h5 { color: #F8FAFC; font-weight: 700; margin: 8px 0 4px; }
+.md-report p { margin: 4px 0; }

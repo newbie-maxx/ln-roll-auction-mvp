@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiError } from '../../api/client'
 import { retroApi, type RetroReport, type RetroReportDetail, type RetroReportMeta } from '../../api/retro'
-import { QUICK_LABELS, canGenerate, downloadText, mdTablesToCsv, quickRange, rangeError, splitChapters, type QuickKind } from '../../retro/logic'
+import { QUICK_LABELS, canGenerate, downloadText, mdChapterToHtml, mdTablesToCsv, quickRange, rangeError, splitChapters, type QuickKind } from '../../retro/logic'
 
 function todayIso(): string {
   const d = new Date()
@@ -153,9 +153,21 @@ export function RetroReportPage() {
               </button>
             </div>
           </div>
-          <pre className="mono min-h-0 flex-1 overflow-auto whitespace-pre-wrap px-4 py-3 text-[11px] leading-5 text-[#CBD5E1]">
-            {chapters.chapters[chapterIdx]?.body.trim() || '选择起止日后点「生成报告」；或从左侧历史报告打开。'}
-          </pre>
+          {detail?.content ? (
+            <div
+              className="md-report min-h-0 flex-1 overflow-auto px-4 py-3 text-[11px] leading-5 text-[#CBD5E1]"
+              dangerouslySetInnerHTML={{
+                __html: mdChapterToHtml(
+                  chapters.chapters[chapterIdx]?.body ?? '',
+                  `/api/retro/reports/${detail.report_id}/figs`,
+                ),
+              }}
+            />
+          ) : (
+            <pre className="mono min-h-0 flex-1 overflow-auto whitespace-pre-wrap px-4 py-3 text-[11px] leading-5 text-[#CBD5E1]">
+              选择起止日后点「生成报告」；或从左侧历史报告打开。
+            </pre>
+          )}
         </section>
       </div>
     </div>

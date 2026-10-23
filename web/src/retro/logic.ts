@@ -164,3 +164,50 @@ export function downloadText(name: string, text: string, mime = 'text/plain;char
   a.click()
   URL.revokeObjectURL(url)
 }
+
+// ---------------- 章节正文 → 安全 HTML（报告预览；零依赖轻量渲染） ----------------
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+}
+
+function inline(s: string): string {
+  return escapeHtml(s)
+    .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_m, alt: string, file: string) =>
+      `<img src="${file}" alt="${alt}" loading="lazy" />`)
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+}
+
+/** 章节体 → HTML：图片改写为 figBase 相对地址；管道表→table；标题/引用/段落。 */
+export function mdChapterToHtml(md: string, figBase: string): string {
+  const lines = md.split('\n')
+  const out: string[] = []
+  let tableRows: string[][] = []
+  const flushTable = () => {
+    if (!tableRows.length) return
+    const rows = tableRows.filter((r) => !r.every((c) => /^[-:\s]*$/.test(c)))
+    if (rows.length) {
+      const html = [`<table><thead><tr>${rows[0].map((c) => `<th>${inline(c)}</th>`).join('')}</tr></thead><tbody>`]
+      for (const r of rows.slice(1)) html.push(`<tr>${r.map((c) => `<td>${inline(c)}</td>`).join('')}</tr>`)
+      html.push('</tbody></table>')
+      out.push(html.join(''))
+    }
+    tableRows = []
+  }
+  for (const raw of lines) {
+    const t = raw.trim()
+    if (t.startsWith('|') && t.endsWith('|')) {
+      tableRows.push(t.slice(1, -1).split('|').map((c) => c.trim()))
+      continue
+    }
+    flushTable()
+    if (!t) { out.push('') ; continue }
+    if (t.startsWith('### ')) { out.push(`<h5>${inline(t.slice(4))}</h5>`) ; continue }
+    if (t.startsWith('## ')) { out.push(`<h4>${inline(t.slice(3))}</h4>`) ; continue }
+    if (t.startsWith('> ')) { out.push(`<blockquote>${inline(t.slice(2))}</blockquote>`) ; continue }
+    out.push(`<p>${inline(t).replace(/src="([^"]+)"/g, (_m, f: string) => `src="${figBase}/${f}"`)}</p>`)
+  }
+  flushTable()
+  return out.filter((x, i, a) => !(x === '' && a[i - 1] === '')).join('\n')
+}

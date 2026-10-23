@@ -1,7 +1,7 @@
 /** M-14 复盘前端口径用例：日期门/快捷区间、登记 6 条校验、CSV 整批拒绝、章节切分与 CSV 转换。 */
 import { describe, expect, it } from 'vitest'
 import {
-  canGenerate, daysBetween, isIsoDate, mdTablesToCsv, parseRegisterCsv, quickRange,
+  canGenerate, daysBetween, isIsoDate, mdChapterToHtml, mdTablesToCsv, parseRegisterCsv, quickRange,
   rangeError, splitChapters, validateRegister, type RegisterDraft,
 } from './logic'
 
@@ -97,5 +97,21 @@ describe('报告预览与导出转换', () => {
   it('管道表转 CSV：跳过分隔行、公式注入转义', () => {
     const csv = mdTablesToCsv('| a | b |\n| --- | --- |\n| 1 | =CMD |\n普通行')
     expect(csv.split('\n')).toEqual(['a,b', '1,\'=CMD'])
+  })
+})
+
+describe('章节正文渲染（图片/表格/转义）', () => {
+  it('图片改写到 figBase 地址，表格转 table，粗体生效，HTML 转义', () => {
+    const md = [
+      '**G-01　负荷（MW）**', '',
+      '![G-01 负荷](G-01_负荷.png)', '',
+      '| a | b |', '| --- | --- |', '| 1 | <x> |',
+    ].join('\n')
+    const html = mdChapterToHtml(md, '/api/retro/reports/R1/figs')
+    if (html.includes('src="/api/retro/reports/R1/figs/G-01_负荷.png"') !== true) throw new Error('img')
+    if (html.includes('<table>') !== true || html.includes('<th>a</th>') !== true) throw new Error('table')
+    if (html.includes('<strong>G-01') !== true) throw new Error('bold')
+    if (html.includes('<x>') !== false || html.includes('&lt;x&gt;') !== true) throw new Error('escape')
+    if (html.includes('---') !== false) throw new Error('sep row leaked')
   })
 })
