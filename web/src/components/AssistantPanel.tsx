@@ -111,6 +111,27 @@ export function AssistantPanel() {
     })
   }
 
+  const quickRetroStatus = () => {
+    const text = "查 2026-08-01 到 2026-08-31 的复盘数据就绪度"
+    if (mode === 'live') { void sendLive(text); return }
+    push({ role: 'user', text })
+    push({ role: 'assistant', text: '演示桩：复盘工具需真实模型（live 模式）才能调用。' })
+  }
+
+  const quickRetroReport = () => {
+    const text = "请生成 2026-08-14 的复盘报告，完成后告诉我 report_id、有效日数与图数"
+    if (mode === 'live') { void sendLive(text); return }
+    push({ role: 'user', text })
+    push({ role: 'assistant', text: '演示桩：生成复盘报告需真实模型（live 模式），或直接用「复盘报告」页。' })
+  }
+
+  const quickRetroSettle = () => {
+    const text = "查 2026-08-14 的逐笔收益表"
+    if (mode === 'live') { void sendLive(text); return }
+    push({ role: 'user', text })
+    push({ role: 'assistant', text: '演示桩：查逐笔收益需真实模型（live 模式），或直接用「成交登记」页。' })
+  }
+
   const saveCfg = async () => {
     try {
       await api.setLlmConfig(cfg.baseUrl, cfg.apiKey, cfg.model)
@@ -157,15 +178,24 @@ export function AssistantPanel() {
       </div>
 
       <div className="space-y-2 border-t border-[#334155] p-3">
-        <div className="flex flex-wrap gap-1">
-          <button onClick={quickAdjustLoad} className="cursor-pointer rounded border border-[#334155] px-2 py-1 text-[10px] text-[#F8FAFC] transition-colors duration-150 hover:border-[#3B82F6] hover:text-[#3B82F6]">
-            把 {(selectedPeriod ?? 10)} 时段省调负荷调到 46,000
-          </button>
+        <div className="grid grid-cols-2 gap-1">
           <button onClick={quickExplain} className="cursor-pointer rounded border border-[#334155] px-2 py-1 text-[10px] text-[#F8FAFC] transition-colors duration-150 hover:border-[#A855F7] hover:text-[#A855F7]">
-            解释该时段预测电价依据
+            解释 10 时段预测电价依据
+          </button>
+          <button onClick={quickAdjustLoad} className="cursor-pointer rounded border border-[#334155] px-2 py-1 text-[10px] text-[#F8FAFC] transition-colors duration-150 hover:border-[#3B82F6] hover:text-[#3B82F6]">
+            把 10 时段负荷调到 46000
           </button>
           <button onClick={quickSimilar} className="cursor-pointer rounded border border-[#334155] px-2 py-1 text-[10px] text-[#F8FAFC] transition-colors duration-150 hover:border-[#22C55E] hover:text-[#22C55E]">
             检索相似运行日
+          </button>
+          <button onClick={quickRetroStatus} className="cursor-pointer rounded border border-[#334155] px-2 py-1 text-[10px] text-[#F8FAFC] transition-colors duration-150 hover:border-[#F59E0B] hover:text-[#F59E0B]">
+            查 8 月复盘数据就绪度
+          </button>
+          <button onClick={quickRetroReport} className="cursor-pointer rounded border border-[#334155] px-2 py-1 text-[10px] text-[#F8FAFC] transition-colors duration-150 hover:border-[#F59E0B] hover:text-[#F59E0B]">
+            生成 2026-08-14 的复盘报告
+          </button>
+          <button onClick={quickRetroSettle} className="cursor-pointer rounded border border-[#334155] px-2 py-1 text-[10px] text-[#F8FAFC] transition-colors duration-150 hover:border-[#F59E0B] hover:text-[#F59E0B]">
+            查 8-14 逐笔收益
           </button>
         </div>
         <div className="flex gap-2">
@@ -179,14 +209,6 @@ export function AssistantPanel() {
           <button onClick={send} disabled={chatBusy} className="cursor-pointer rounded bg-[#22C55E] px-3 text-xs font-semibold text-[#0F172A] transition-opacity duration-150 hover:opacity-90 disabled:opacity-40">
             发送
           </button>
-        </div>
-        <div className="text-[10px] leading-4 text-[#64748B]">
-          <span className="font-semibold text-[#94A3B8]">我能做什么（直接用自然语言说）：</span>
-          <br />· 问价：「解释 10 时段预测电价依据」「看落点概率/灰度评估」
-          <br />· 改数：「把 10 时段负荷调到 46000」（会先复述并要你给理由）
-          <br />· 查数：「当前工作台状态」「检索相似运行日」「看 M7 开机明细」
-          <br />· 复盘：「查 8 月复盘数据就绪度」「生成 2026-08-14 的复盘报告」
-          <br />· 登记：「登记一笔：8 月 14 日 15 时，卖，成交，283 元，80 兆瓦时」「查 8-14 逐笔收益」
         </div>
       </div>
     </div>
