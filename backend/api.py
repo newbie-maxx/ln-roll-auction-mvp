@@ -277,6 +277,13 @@ def chat(body: ChatBody) -> dict:
     return {"ok": True, "reply": reply, "tool_calls": tool_calls}
 
 
+# ---------- 关停收尾：释放复盘 MCP 子进程（否则遗留进程长期占用 SQLite 锁） ----------
+@app.on_event("shutdown")
+def _shutdown_retro_runner() -> None:
+    from .retro.skill_runner import shutdown_runner
+    shutdown_runner()
+
+
 # ---------- 静态托管 web/dist（单机交付形态：uvicorn api:app 即完整服务） ----------
 DIST = Path(__file__).resolve().parent.parent / "web" / "dist"
 if DIST.exists():

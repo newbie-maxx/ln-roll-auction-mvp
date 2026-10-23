@@ -7,7 +7,9 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -134,18 +136,43 @@ def _dumps(obj: Any) -> str:
     return json.dumps(obj, ensure_ascii=False, sort_keys=True)
 
 
+_SCHEMA_READY: set[str] = set()          # 进程内：同一库建表只做一次（避免每次连接抢写锁）
+_SCHEMA_LOCK = threading.Lock()
+
+
 class RetroStore:
-    """复盘表存取：建表幂等；查询固定排序保证顺序确定。"""
+    """复盘表存取：建表幂等；查询固定排序保证顺序确定。
+
+    并发约束：API/MCP 多进程多线程会同时建连，`PRAGMA journal_mode=WAL` 需短暂独占锁——
+    先设 busy_timeout 重试，争用失败不致命（WAL 是文件级持久设置，先到连接已生效）。
+    """
 
     def __init__(self, db_path: Path | str | None = None) -> None:
         import os
         default = os.environ.get("WB_RETRO_DB") or DB_PATH   # 与 MCP data server 同库
         self.db_path = Path(db_path) if db_path else Path(default)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
+        self.conn = sqlite3.connect(str(self.db_path), check_same_thread=False, timeout=15.0)
         self.conn.row_factory = sqlite3.Row
-        self.conn.execute("PRAGMA journal_mode=WAL")
-        self.conn.executescript(SCHEMA)
+        self.conn.execute("PRAGMA busy_timeout=15000")
+        try:
+            self.conn.execute("PRAGMA journal_mode=WAL")
+        except sqlite3.OperationalError:
+            pass   # 并发建连争用：WAL 已由先到连接持久化，本连接继续可用
+        key = str(self.db_path.resolve())
+        if key not in _SCHEMA_READY:
+            with _SCHEMA_LOCK:
+                if key not in _SCHEMA_READY:
+                    # 只读探测（不拿写锁）：表齐则跳过 DDL——避免多进程首连同时抢写锁
+                    try:
+                        names = {r["name"] for r in self.conn.execute(
+                            "SELECT name FROM sqlite_master WHERE type='table'")}
+                    except sqlite3.OperationalError:
+                        names = set()
+                    wanted = set(re.findall(r"CREATE TABLE IF NOT EXISTS (\w+)", SCHEMA))
+                    if not wanted.issubset(names):
+                        self.conn.executescript(SCHEMA)
+                    _SCHEMA_READY.add(key)
         self.conn.commit()
 
     # ---------- 通用 ----------

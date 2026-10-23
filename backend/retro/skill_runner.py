@@ -39,16 +39,18 @@ class SkillRunner:
         return names
 
     # ---- persister（留痕经 data server 原子工具落库） ----
+    # 注意：MCP 客户端抛的是 mcp.server.ToolError，与 skill_runtime.ToolError 不是同一类；
+    # 留痕失败一律不阻断业务（审计可事后补），故捕获宽异常并保持幂等。
     def log_run(self, record: dict) -> None:
         try:
             self._data.call("skill.run_log", {"record": record})
-        except ToolError:
-            pass   # 留痕失败不阻断业务，审计可事后补
+        except Exception:   # noqa: BLE001
+            pass
 
     def log_audit(self, event: dict) -> None:
         try:
             self._data.call("skill.audit", {"event": event})
-        except ToolError:
+        except Exception:   # noqa: BLE001
             pass
 
     # ---- 对外 API ----
@@ -87,3 +89,14 @@ def get_runner() -> SkillRunner:
         if _RUNNER is None:
             _RUNNER = SkillRunner()
         return _RUNNER
+
+
+def shutdown_runner() -> None:
+    """关闭进程内 MCP 子进程（API 关停时调用；遗留子进程会长期占库锁）。"""
+    global _RUNNER
+    with _RUNNER_LOCK:
+        if _RUNNER is not None:
+            try:
+                _RUNNER.close()
+            finally:
+                _RUNNER = None
